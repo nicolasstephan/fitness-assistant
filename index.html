@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#16181d">
+  <title>Fitness Assistant</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <div class="layout">
+    <section class="stage">
+      <div id="viewer" class="viewer"></div>
+
+      <div class="loading" id="loading">
+        <div class="loading-bar"><div id="loading-fill"></div></div>
+        <span>Loading anatomy…</span>
+      </div>
+
+      <div class="toolbar" role="toolbar" aria-label="View">
+        <button data-view="front">Front</button>
+        <button data-view="back">Back</button>
+        <button data-view="left">Left</button>
+        <button data-view="right">Right</button>
+        <span class="sep"></span>
+        <button id="toggle-xray" aria-pressed="false">X-ray</button>
+        <button id="toggle-skeleton" aria-pressed="true">Skeleton</button>
+      </div>
+
+      <div class="legend">
+        <span><i class="dot primary"></i>Primary</span>
+        <span><i class="dot secondary"></i>Secondary</span>
+      </div>
+
+      <div class="info" id="info" hidden></div>
+    </section>
+
+    <aside class="panel">
+      <header class="panel-head">
+        <div class="title-row">
+          <h1>Fitness Assistant</h1>
+          <button id="sync-open" class="icon-btn" aria-label="Sync settings" title="Sync settings">⚙</button>
+        </div>
+        <button id="sync-status" class="sync-status" type="button"></button>
+        <div class="tabs" role="tablist">
+          <button role="tab" data-tab="exercises" aria-selected="true">My exercises</button>
+          <button role="tab" data-tab="muscles" aria-selected="false">Muscles</button>
+        </div>
+      </header>
+
+      <div class="tab-body" data-tab-body="exercises">
+        <div class="search-row">
+          <input id="exercise-search" type="search" placeholder="Search to add exercises…" autocomplete="off">
+          <button id="clear-selection" class="ghost">Clear</button>
+        </div>
+        <ul id="search-results" class="list results" hidden></ul>
+        <div id="my-exercises">
+          <p class="hint" id="my-hint"></p>
+          <ul id="exercise-list" class="list"></ul>
+        </div>
+      </div>
+
+      <div class="tab-body" data-tab-body="muscles" hidden>
+        <p class="hint">Tap a muscle group, or tap a muscle on the model.</p>
+        <div id="group-list"></div>
+      </div>
+
+      <footer class="credits">
+        Anatomy: <a href="https://www.z-anatomy.com" target="_blank" rel="noopener">Z-Anatomy</a> (CC BY-SA 4.0),
+        based on <a href="https://dbarchive.biosciencedbc.jp/en/bodyparts3d/" target="_blank" rel="noopener">BodyParts3D</a> © DBCLS (CC BY-SA 2.1 JP)
+      </footer>
+    </aside>
+  </div>
+
+  <dialog id="sync-dialog">
+    <form>
+      <h2>Sync with GitHub</h2>
+      <p class="hint">Your data is saved as <code>profile.json</code> in a private GitHub repo, so it's the same on all your devices.</p>
+      <ol class="hint steps">
+        <li>Create a <strong>private</strong> repo, e.g. <code>fitness-data</code>.</li>
+        <li>Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>:
+          repository access <em>Only select repositories</em> → that repo, permission <em>Contents: Read and write</em>.</li>
+        <li>Enter both below. The token stays in this browser only.</li>
+      </ol>
+      <label>Repository<input name="repo" placeholder="username/fitness-data" required autocomplete="off"></label>
+      <label>Token<input name="token" type="password" placeholder="github_pat_…" required autocomplete="off"></label>
+      <p id="sync-error" class="sync-error" role="status"></p>
+      <div class="dialog-actions">
+        <button type="button" id="sync-disconnect" class="ghost danger">Disconnect</button>
+        <span class="spacer"></span>
+        <button type="button" id="sync-cancel" class="ghost">Cancel</button>
+        <button type="submit" class="primary-btn">Connect</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

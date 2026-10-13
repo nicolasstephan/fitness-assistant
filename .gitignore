@@ -1,0 +1,10 @@
+# raw anatomy source files (large; see README "Regenerating the 3D models")
+*.blend
+*.blend1
+Z-Anatomy*/
+*.zip
+*.7z
+
+.DS_Store
+Thumbs.db
+.vscode/
