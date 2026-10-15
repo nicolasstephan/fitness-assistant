@@ -10,6 +10,15 @@ const tUTC = (date) => Date.parse(`${date}T00:00:00Z`);
 const fmtDay = (t) => new Date(t).toLocaleDateString(undefined, { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", year: "numeric" });
 const fmtWeek = (t) => `Week of ${new Date(t).toLocaleDateString(undefined, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" })}`;
 const hm = (min) => `${Math.floor(min / 60)}:${String(Math.round(min % 60)).padStart(2, "0")}`;
+// WHOOP activity names grouped into a few categories (fixed order = fixed colors)
+const WORKOUT_CATEGORIES = [
+  { label: "Strength", match: /strength|weight|lifting|functional|crossfit|hiit|calisthenics|pilates|yoga/i },
+  { label: "Cardio", match: /run|cycl|bik|spin|swim|row|hik|elliptical|stair|ski|cardio/i },
+  { label: "Walking", match: /walk/i },
+  { label: "Sports & other", match: /./ },
+];
+const categoryIndex = (activity) => WORKOUT_CATEGORIES.findIndex((c) => c.match.test(activity ?? ""));
+
 const mean = (xs) => {
   const v = xs.filter((x) => x != null);
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
@@ -158,7 +167,7 @@ export class HealthView {
     });
   }
 
-  renderCards({ days, cur, workouts }) {
+  renderCards({ days, cur, workouts, start, end }) {
     const cards = this.root.querySelector("#health-cards");
     cards.replaceChildren();
     // charts are sized from their container, so draw only once every card is in the grid
@@ -258,6 +267,8 @@ export class HealthView {
       [{ label: "Activity", get: (r) => r.label }, { label: "Hours", get: (r) => r.value.toFixed(1), num: true }],
       rows);
 
+    this.trainingTimeCard(cards, workouts, start, end);
+    this.zonesCard(cards, workouts);
     this.periodCard(cards, cur, workouts);
     this.journalCard(cards, cur);
     this.workoutsCard(cards, workouts);
@@ -350,21 +361,62 @@ export class HealthView {
     body.appendChild(note);
   }
 
+  /** Training time per week, stacked by workout category. */
+  trainingTimeCard(cards, workouts, start, end) {
+    const weekOf = (t) => t - ((new Date(t).getUTCDay() + 6) % 7) * DAY;
+    const series = WORKOUT_CATEGORIES.map((c, i) => ({ name: c.label, color: css(`--series-${i + 1}`) }));
+    const weeks = new Map();
+    for (let t = weekOf(start); t <= end; t += 7 * DAY) weeks.set(t, WORKOUT_CATEGORIES.map(() => 0));
+    for (const w of workouts) {
+      const row = weeks.get(weekOf(w.t));
+      if (row) row[categoryIndex(w.activity)] += (w.durationMin ?? 0) / 60;
+    }
+    const rows = [...weeks].map(([t, values]) => ({ t, values }));
+    const total = rows.reduce((a, r) => a + r.values.reduce((x, y) => x + y, 0), 0);
+    this.card(cards, "Training time per week", `Hours by category · avg ${hm((total / Math.max(1, rows.length)) * 60)} h per week`,
+      (el) => stackedColumns(el, rows, series, { unit: "h", describe: fmtWeek, format: (v) => hm(v * 60) }),
+      [
+        { label: "Week of", get: (r) => new Date(r.t).toISOString().slice(0, 10) },
+        ...series.map((s, k) => ({ label: `${s.name} (h)`, get: (r) => hm(r.values[k] * 60), num: true })),
+      ],
+      rows,
+      series);
+  }
+
+  /** Total minutes in each WHOOP heart-rate zone. */
+  zonesCard(cards, workouts) {
+    const minutes = [0, 0, 0, 0, 0];
+    for (const w of workouts) w.zones.forEach((pct, i) => (minutes[i] += ((w.durationMin ?? 0) * pct) / 100));
+    const total = minutes.reduce((a, b) => a + b, 0);
+    const rows = minutes.map((m, i) => ({ label: `Zone ${i + 1}${["", " · easy", "", "", " · max"][i]}`, value: m }));
+    const pct = (m) => (total ? `${Math.round((m / total) * 100)}%` : "–");
+    this.card(cards, "Heart-rate zones", "Minutes in each WHOOP heart-rate zone during workouts",
+      (el) => (total ? hBars(el, rows, { color: css("--series-1"), format: (v) => `${hm(v)} h · ${pct(v)}` }) : (el.textContent = "No workouts in this period.")),
+      [{ label: "Zone", get: (r) => r.label }, { label: "Time (h)", get: (r) => hm(r.value), num: true }, { label: "Share", get: (r) => pct(r.value), num: true }],
+      rows);
+  }
+
+  /** Every workout in the range, newest first. */
   workoutsCard(cards, workouts) {
-    const recent = workouts.slice(-10).reverse();
-    const card = this.card(cards, "Recent workouts", `Last ${recent.length} in this period`, null, null, null);
+    const all = [...workouts].reverse();
+    const card = this.card(cards, "All workouts", `${all.length} in this period, newest first`, null, null, null);
+    card.classList.add("wide");
     const body = card.querySelector(".card-body");
-    if (!recent.length) {
+    body.classList.add("is-table");
+    if (!all.length) {
       body.textContent = "No workouts in this period.";
       return;
     }
     dataTable(body, [
-      { label: "Date", get: (w) => w.start.slice(0, 10) },
+      { label: "Date", get: (w) => `${w.start.slice(0, 10)} ${w.start.slice(11, 16)}` },
       { label: "Activity", get: (w) => w.activity },
+      { label: "Category", get: (w) => WORKOUT_CATEGORIES[categoryIndex(w.activity)].label },
       { label: "Duration", get: (w) => `${w.durationMin} min`, num: true },
       { label: "Strain", get: (w) => w.strain?.toFixed(1), num: true },
-      { label: "Avg HR", get: (w) => w.avgHr, num: true },
-    ], recent);
+      { label: "Avg / max HR", get: (w) => (w.avgHr ? `${w.avgHr} / ${w.maxHr}` : null), num: true },
+      { label: "kcal", get: (w) => (w.kcal == null ? null : Math.round(w.kcal)), num: true },
+      { label: "Zones 1–5 (%)", get: (w) => w.zones.map((z) => Math.round(z)).join(" / "), num: true },
+    ], all);
   }
 
   /** A chart card with a Chart/Table toggle. Returns the card element. */

@@ -14,6 +14,7 @@
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
+  --series-4: #eda100;
   --grid: #e1e0d9;
   --trend: #52514e;
   --vol-1: #5598e7;
@@ -39,6 +40,7 @@
     --series-1: #3987e5;
     --series-2: #d95926;
     --series-3: #199e70;
+    --series-4: #c98500;
     --grid: #2c3038;
     --trend: #c3c2b7;
     --vol-1: #256abf;
@@ -388,6 +390,8 @@ body[data-view="health"] .layout { display: none; }
 .card-sub { margin: 2px 0 8px; font-size: 12px; color: var(--muted); }
 .card-body { position: relative; }
 .card-body.is-table { max-height: 260px; overflow-y: auto; }
+.card.wide { grid-column: 1 / -1; }
+.card.wide .card-body.is-table { max-height: 420px; }
 .card-note { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
 
 .legend-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
