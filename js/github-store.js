@@ -74,10 +74,14 @@ export class GitHubStore {
 
 async function errorText(res) {
   if (res.status === 401) return "Token invalid or expired";
-  if (res.status === 403) return "Token lacks write access to this repo";
+  let message = "";
   try {
-    return `GitHub: ${(await res.json()).message}`;
+    message = (await res.json()).message ?? "";
   } catch {
-    return `GitHub error ${res.status}`;
+    // no JSON body
   }
+  if (res.status === 403 && /not accessible/i.test(message)) {
+    return "Token can read but not write: set Contents to “Read and write”";
+  }
+  return message ? `GitHub (${res.status}): ${message}` : `GitHub error ${res.status}`;
 }
