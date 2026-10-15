@@ -23,11 +23,19 @@ export class GitHubStore {
     this.sha = null; // sha of the file version we last saw; required by GitHub to update
   }
 
-  async request(method, body) {
+  /** Read-only fetch of a file's parsed JSON (works for files over 1 MB too). Null if missing. */
+  async loadRaw() {
+    const res = await this.request("GET", undefined, "application/vnd.github.raw+json");
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(await errorText(res));
+    return res.json();
+  }
+
+  async request(method, body, accept = "application/vnd.github+json") {
     const res = await fetch(`${API}/repos/${this.repo}/contents/${this.path}`, {
       method,
       headers: {
-        Accept: "application/vnd.github+json",
+        Accept: accept,
         Authorization: `Bearer ${this.token}`,
         "X-GitHub-Api-Version": "2022-11-28",
         ...(body ? { "Content-Type": "application/json" } : {}),

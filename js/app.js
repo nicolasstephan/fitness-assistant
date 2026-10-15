@@ -2,10 +2,12 @@ import { MuscleViewer } from "./viewer.js";
 import { EXERCISES } from "./data/exercises.js";
 import { MUSCLE_GROUPS, REGIONS, groupById } from "./data/muscle-groups.js";
 import { GitHubStore } from "./github-store.js";
+import { HealthView } from "./health.js";
 
 const $ = (sel) => document.querySelector(sel);
 
 const viewer = new MuscleViewer($("#viewer"));
+const health = new HealthView($("#health-view"));
 const state = {
   mine: [], // ids of the user's exercises, in the order added
   exercises: new Set(), // selected (highlighted) exercise ids
@@ -125,7 +127,43 @@ async function connectGitHub(cfg, { merge = false } = {}) {
   renderMyExercises();
   if (!remote || (localWins && ids.join() !== remoteIds.join())) await pushToGitHub();
   else setSyncStatus(`Synced to ${store.repo}`, "ok");
+  loadHealth();
 }
+
+// ---------- health data (health/whoop.json in the data repo), cached for offline use
+
+const HEALTH_CACHE_KEY = "fa.health";
+
+async function loadHealth() {
+  if (!store) {
+    health.setMessage("Connect GitHub sync (⚙) to load your health data.");
+    return;
+  }
+  try {
+    const doc = await new GitHubStore({ repo: store.repo, token: store.token, path: "health/whoop.json" }).loadRaw();
+    if (!doc) {
+      health.setMessage(`No health data in ${store.repo} yet.`);
+      return;
+    }
+    health.setMessage("");
+    health.setData(doc);
+    writeLocal(HEALTH_CACHE_KEY, doc);
+  } catch (err) {
+    health.setMessage(`Could not load health data: ${err.message}`);
+  }
+}
+
+// ---------- views: body (3D) / health (dashboard)
+
+function showView(view) {
+  document.body.dataset.view = view;
+  $("#health-view").hidden = view !== "health";
+  if (view === "health") health.render();
+  writeHash();
+}
+
+$("#health-open").addEventListener("click", () => showView("health"));
+$("#health-back").addEventListener("click", () => showView("body"));
 
 const primaryLabels = (e) => e.primary.map((g) => groupById.get(g)?.label ?? g).join(" · ");
 
@@ -265,6 +303,7 @@ function writeHash() {
   if (state.group) params.set("group", state.group);
   else if (state.exercises.size) params.set("ex", [...state.exercises].join(","));
   if (viewer.xray) params.set("xray", "1");
+  if (document.body.dataset.view === "health") params.set("view", "health");
   const hash = params.toString().replaceAll("%2C", ",");
   history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
 }
@@ -273,6 +312,10 @@ function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
   state.exercises = new Set((params.get("ex") ?? "").split(",").filter((id) => state.mine.includes(id)));
   state.group = groupById.has(params.get("group")) ? params.get("group") : null;
+  if (params.get("view") === "health") {
+    document.body.dataset.view = "health";
+    $("#health-view").hidden = false;
+  }
   if (params.get("xray") === "1") {
     viewer.setXray(true);
     $("#toggle-xray").setAttribute("aria-pressed", "true");
@@ -321,6 +364,7 @@ dialog.querySelector("form").addEventListener("submit", async (e) => {
 $("#sync-disconnect").addEventListener("click", () => {
   writeLocal(SYNC_KEY, undefined);
   writeLocal(DIRTY_KEY, undefined);
+  writeLocal(HEALTH_CACHE_KEY, undefined); // health data stays only on connected devices
   store = null;
   setSyncStatus("This device only — tap to sync");
   dialog.close();
@@ -331,11 +375,14 @@ $("#sync-disconnect").addEventListener("click", () => {
 state.mine = loadMyExercises();
 readHash();
 renderMyExercises();
+const cachedHealth = readLocal(HEALTH_CACHE_KEY, null);
+if (cachedHealth) health.setData(cachedHealth);
 const syncCfg = readLocal(SYNC_KEY, null);
 if (syncCfg) {
   connectGitHub(syncCfg).catch((err) => setSyncStatus(`Not synced: ${err.message}`, "error"));
 } else {
   setSyncStatus("This device only — tap to sync");
+  if (!cachedHealth) health.setMessage("Connect GitHub sync (⚙) to load your health data.");
 }
 viewer
   .load("assets/models/muscles.glb", "assets/models/skeleton.glb", (p) => ($("#loading-fill").style.width = `${Math.round(p * 100)}%`))

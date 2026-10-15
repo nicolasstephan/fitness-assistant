@@ -1,0 +1,275 @@
+// Minimal SVG charts: line (time series), stacked columns, horizontal bars.
+// Colors come from CSS custom properties (see .health in style.css), so light/dark mode just works.
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const PAD = { top: 12, right: 44, bottom: 24, left: 36 };
+
+function svgEl(tag, attrs = {}, parent) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  parent?.appendChild(el);
+  return el;
+}
+
+function niceTicks(min, max, count = 4) {
+  const span = max - min || 1;
+  const raw = span / count;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw);
+  const lo = Math.floor(min / step) * step;
+  const hi = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = lo; v <= hi + step / 2; v += step) ticks.push(+v.toFixed(6));
+  return ticks;
+}
+
+const DAY = 86400000;
+const fmtDate = (t, opts) => new Date(t).toLocaleDateString(undefined, { timeZone: "UTC", ...opts });
+
+function timeTicks(t0, t1, width) {
+  const span = (t1 - t0) / DAY;
+  const maxTicks = Math.max(2, Math.floor(width / 70));
+  const ticks = [];
+  if (span > 70) {
+    // month starts
+    const d = new Date(t0);
+    let m = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
+    while (m <= t1) {
+      ticks.push(m);
+      const md = new Date(m);
+      m = Date.UTC(md.getUTCFullYear(), md.getUTCMonth() + 1, 1);
+    }
+    const every = Math.ceil(ticks.length / maxTicks);
+    return { ticks: ticks.filter((_, i) => i % every === 0), fmt: (t) => fmtDate(t, { month: "short" }) };
+  }
+  const stepDays = [1, 2, 7, 14].find((s) => span / s <= maxTicks) ?? 14;
+  for (let t = t0; t <= t1; t += stepDays * DAY) ticks.push(t);
+  return { ticks, fmt: (t) => fmtDate(t, { day: "numeric", month: "short" }) };
+}
+
+/** Shared hover tooltip for a chart container. Content is built with textContent only. */
+function tooltip(container) {
+  const tip = document.createElement("div");
+  tip.className = "chart-tip";
+  tip.hidden = true;
+  container.appendChild(tip);
+  return {
+    show(x, y, title, rows) {
+      tip.replaceChildren();
+      const h = document.createElement("div");
+      h.className = "chart-tip-title";
+      h.textContent = title;
+      tip.appendChild(h);
+      for (const { value, label, color } of rows) {
+        const row = document.createElement("div");
+        row.className = "chart-tip-row";
+        if (color) {
+          const key = document.createElement("i");
+          key.style.background = color;
+          row.appendChild(key);
+        }
+        const b = document.createElement("strong");
+        b.textContent = value;
+        row.appendChild(b);
+        if (label) row.appendChild(document.createTextNode(` ${label}`));
+        tip.appendChild(row);
+      }
+      tip.hidden = false;
+      // right of the pointer, flipped to the left near the edge
+      let left = x + 12;
+      if (left + tip.offsetWidth > container.clientWidth) left = x - tip.offsetWidth - 12;
+      tip.style.left = `${Math.max(0, left)}px`;
+      tip.style.top = `${Math.max(0, y - tip.offsetHeight / 2)}px`;
+    },
+    hide() {
+      tip.hidden = true;
+    },
+  };
+}
+
+function frame(container, height) {
+  container.replaceChildren();
+  container.classList.add("chart");
+  const width = container.clientWidth || 320;
+  const svg = svgEl("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img" }, container);
+  return { svg, width, height, tip: tooltip(container) };
+}
+
+function yAxis(svg, ticks, y, x0, x1, fmt) {
+  for (const v of ticks) {
+    svgEl("line", { x1: x0, x2: x1, y1: y(v), y2: y(v), class: "grid" }, svg);
+    svgEl("text", { x: x0 - 6, y: y(v), class: "tick", "text-anchor": "end", "dominant-baseline": "middle" }, svg).textContent = fmt(v);
+  }
+}
+
+/**
+ * Time series line. points: [{ t (UTC ms), v (number|null) }]; gaps where v is null.
+ * opts: { color, format, unit, ticks (fixed y ticks, optional), describe(t) }
+ */
+export function lineChart(container, points, opts) {
+  const { svg, width, height, tip } = frame(container, opts.height ?? 180);
+  const vals = points.map((p) => p.v).filter((v) => v != null);
+  if (!vals.length) return;
+  const t0 = points[0].t, t1 = points.at(-1).t;
+  const ticks = opts.ticks ?? niceTicks(Math.min(...vals), Math.max(...vals));
+  const [lo, hi] = [ticks[0], ticks.at(-1)];
+  const x = (t) => PAD.left + ((t - t0) / (t1 - t0 || 1)) * (width - PAD.left - PAD.right);
+  const y = (v) => PAD.top + (1 - (v - lo) / (hi - lo || 1)) * (height - PAD.top - PAD.bottom);
+  const fmt = opts.format ?? ((v) => `${Math.round(v)}`);
+
+  yAxis(svg, ticks, y, PAD.left, width - PAD.right, opts.tickFormat ?? fmt);
+  const tt = timeTicks(t0, t1, width - PAD.left - PAD.right);
+  for (const t of tt.ticks) {
+    svgEl("text", { x: x(t), y: height - 6, class: "tick", "text-anchor": "middle" }, svg).textContent = tt.fmt(t);
+  }
+
+  let d = "";
+  let pen = false;
+  for (const p of points) {
+    if (p.v == null) { pen = false; continue; }
+    d += `${pen ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
+    pen = true;
+  }
+  svgEl("path", { d, class: "line", stroke: opts.color }, svg);
+
+  const last = [...points].reverse().find((p) => p.v != null);
+  svgEl("circle", { cx: x(last.t), cy: y(last.v), r: 4, fill: opts.color, class: "dot" }, svg);
+  svgEl("text", { x: x(last.t) + 8, y: y(last.v), class: "end-label", "dominant-baseline": "middle" }, svg).textContent = fmt(last.v);
+
+  // crosshair snaps to the nearest point
+  const cross = svgEl("line", { y1: PAD.top, y2: height - PAD.bottom, class: "crosshair", visibility: "hidden" }, svg);
+  const hoverDot = svgEl("circle", { r: 4, fill: opts.color, class: "dot", visibility: "hidden" }, svg);
+  const hit = svgEl("rect", { x: PAD.left, y: 0, width: width - PAD.left - PAD.right, height, fill: "transparent" }, svg);
+  const move = (e) => {
+    const r = svg.getBoundingClientRect();
+    const px = e.clientX - r.left;
+    let best = null;
+    for (const p of points) if (p.v != null && (!best || Math.abs(x(p.t) - px) < Math.abs(x(best.t) - px))) best = p;
+    if (!best) return;
+    cross.setAttribute("x1", x(best.t));
+    cross.setAttribute("x2", x(best.t));
+    cross.setAttribute("visibility", "visible");
+    hoverDot.setAttribute("cx", x(best.t));
+    hoverDot.setAttribute("cy", y(best.v));
+    hoverDot.setAttribute("visibility", "visible");
+    tip.show(x(best.t), y(best.v), opts.describe(best.t), [{ value: `${fmt(best.v)}${opts.unit ? ` ${opts.unit}` : ""}`, color: opts.color }]);
+  };
+  hit.addEventListener("pointermove", move);
+  hit.addEventListener("pointerdown", move);
+  hit.addEventListener("pointerleave", () => {
+    cross.setAttribute("visibility", "hidden");
+    hoverDot.setAttribute("visibility", "hidden");
+    tip.hide();
+  });
+}
+
+/**
+ * Stacked columns. rows: [{ t, values: [..] }], series: [{ name, color }] bottom-up.
+ * opts: { format, unit, describe(t) }
+ */
+export function stackedColumns(container, rows, series, opts) {
+  const { svg, width, height, tip } = frame(container, opts.height ?? 200);
+  const totals = rows.map((r) => r.values.reduce((a, b) => a + (b ?? 0), 0));
+  if (!totals.some((v) => v > 0)) return;
+  const ticks = niceTicks(0, Math.max(...totals));
+  const hi = ticks.at(-1);
+  const plotW = width - PAD.left - PAD.right;
+  const band = plotW / rows.length;
+  const barW = Math.min(24, Math.max(2, band - 2)); // 2px surface gap between neighbors
+  const y = (v) => PAD.top + (1 - v / hi) * (height - PAD.top - PAD.bottom);
+  const fmt = opts.format ?? ((v) => `${v}`);
+
+  yAxis(svg, ticks, y, PAD.left, width - PAD.right, fmt);
+  const t0 = rows[0].t, t1 = rows.at(-1).t;
+  const xCenter = (i) => PAD.left + band * (i + 0.5);
+  const tt = timeTicks(t0, t1, plotW);
+  for (const t of tt.ticks) {
+    const i = Math.round(((t - t0) / (t1 - t0 || 1)) * (rows.length - 1));
+    svgEl("text", { x: xCenter(i), y: height - 6, class: "tick", "text-anchor": "middle" }, svg).textContent = tt.fmt(t);
+  }
+
+  rows.forEach((row, i) => {
+    const g = svgEl("g", { class: "col" }, svg);
+    let acc = 0;
+    const topIdx = row.values.reduce((top, v, k) => (v > 0 ? k : top), -1);
+    row.values.forEach((v, k) => {
+      if (!v) return;
+      const yTop = y(acc + v);
+      const h = y(acc) - yTop - (k === topIdx ? 0 : 2); // 2px gap between segments
+      acc += v;
+      if (h <= 0) return;
+      const x0 = xCenter(i) - barW / 2;
+      const r = k === topIdx ? Math.min(4, barW / 2, h) : 0; // rounded data-end, square elsewhere
+      const path = r
+        ? `M${x0},${yTop + h}V${yTop + r}Q${x0},${yTop} ${x0 + r},${yTop}H${x0 + barW - r}Q${x0 + barW},${yTop} ${x0 + barW},${yTop + r}V${yTop + h}Z`
+        : `M${x0},${yTop + (k === topIdx ? 0 : 2)}h${barW}v${h}h${-barW}Z`;
+      svgEl("path", { d: path, fill: series[k].color }, g);
+    });
+    // hit target: the whole band, full height
+    const hit = svgEl("rect", { x: PAD.left + band * i, y: PAD.top, width: band, height: height - PAD.top - PAD.bottom, fill: "transparent" }, g);
+    const show = () => {
+      g.classList.add("hover");
+      tip.show(xCenter(i), y(totals[i]), opts.describe(row.t), [
+        { value: `${fmt(totals[i])} ${opts.unit ?? ""}`.trim(), label: "total" },
+        ...series.map((s, k) => ({ value: fmt(row.values[k] ?? 0), label: s.name, color: s.color })).reverse(),
+      ]);
+    };
+    hit.addEventListener("pointerenter", show);
+    hit.addEventListener("pointerdown", show);
+    hit.addEventListener("pointerleave", () => {
+      g.classList.remove("hover");
+      tip.hide();
+    });
+  });
+}
+
+/** Horizontal bars. rows: [{ label, value }]; value label at the bar tip. */
+export function hBars(container, rows, opts) {
+  container.replaceChildren();
+  container.classList.add("chart", "hbars");
+  const max = Math.max(...rows.map((r) => r.value), 1);
+  const fmt = opts.format ?? ((v) => `${v}`);
+  for (const r of rows) {
+    const row = document.createElement("div");
+    row.className = "hbar-row";
+    const label = document.createElement("span");
+    label.className = "hbar-label";
+    label.textContent = r.label;
+    const track = document.createElement("span");
+    track.className = "hbar-track";
+    const bar = document.createElement("span");
+    bar.className = "hbar";
+    bar.style.width = `${(r.value / max) * 100}%`;
+    bar.style.background = opts.color;
+    track.appendChild(bar);
+    const val = document.createElement("span");
+    val.className = "hbar-value";
+    val.textContent = fmt(r.value);
+    row.append(label, track, val);
+    container.appendChild(row);
+  }
+}
+
+/** Table twin of a chart: columns [{ label, get(row), num? }]. */
+export function dataTable(container, columns, rows) {
+  container.replaceChildren();
+  const table = document.createElement("table");
+  table.className = "data-table";
+  const head = table.createTHead().insertRow();
+  for (const c of columns) {
+    const th = document.createElement("th");
+    th.textContent = c.label;
+    if (c.num) th.className = "num";
+    head.appendChild(th);
+  }
+  const body = table.createTBody();
+  for (const r of rows) {
+    const tr = body.insertRow();
+    for (const c of columns) {
+      const td = tr.insertCell();
+      td.textContent = c.get(r) ?? "–";
+      if (c.num) td.className = "num";
+    }
+  }
+  container.appendChild(table);
+}
