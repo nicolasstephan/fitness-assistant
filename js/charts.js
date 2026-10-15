@@ -47,6 +47,34 @@ function timeTicks(t0, t1, width) {
   return { ticks, fmt: (t) => fmtDate(t, { day: "numeric", month: "short" }) };
 }
 
+/**
+ * Least-squares linear trend over points [{ t, v }] (nulls ignored). Null if fewer than 3 points.
+ * tStat = slope / its standard error; |tStat| < 2 means the slope is not distinguishable from noise.
+ */
+export function linearTrend(points) {
+  const ps = points.filter((p) => p.v != null);
+  if (ps.length < 3) return null;
+  const n = ps.length;
+  const mt = ps.reduce((a, p) => a + p.t, 0) / n;
+  const mv = ps.reduce((a, p) => a + p.v, 0) / n;
+  let num = 0, den = 0;
+  for (const p of ps) {
+    num += (p.t - mt) * (p.v - mv);
+    den += (p.t - mt) ** 2;
+  }
+  const slope = den ? num / den : 0;
+  const at = (t) => mv + slope * (t - mt);
+  const ssRes = ps.reduce((a, p) => a + (p.v - at(p.t)) ** 2, 0);
+  const se = den ? Math.sqrt(ssRes / (n - 2) / den) : 0;
+  const tStat = se ? slope / se : 0;
+  const t0 = ps[0].t, t1 = ps.at(-1).t;
+  return { at, t0, t1, delta: at(t1) - at(t0), tStat };
+}
+
+function drawTrend(svg, trend, x, y) {
+  svgEl("line", { x1: x(trend.t0), y1: y(trend.at(trend.t0)), x2: x(trend.t1), y2: y(trend.at(trend.t1)), class: "trend" }, svg);
+}
+
 /** Shared hover tooltip for a chart container. Content is built with textContent only. */
 function tooltip(container) {
   const tip = document.createElement("div");
@@ -104,7 +132,7 @@ function yAxis(svg, ticks, y, x0, x1, fmt) {
 
 /**
  * Time series line. points: [{ t (UTC ms), v (number|null) }]; gaps where v is null.
- * opts: { color, format, unit, ticks (fixed y ticks, optional), describe(t) }
+ * opts: { color, format, unit, ticks (fixed y ticks, optional), trend (from linearTrend, optional), describe(t) }
  */
 export function lineChart(container, points, opts) {
   const { svg, width, height, tip } = frame(container, opts.height ?? 180);
@@ -131,6 +159,7 @@ export function lineChart(container, points, opts) {
     pen = true;
   }
   svgEl("path", { d, class: "line", stroke: opts.color }, svg);
+  if (opts.trend) drawTrend(svg, opts.trend, x, y);
 
   const last = [...points].reverse().find((p) => p.v != null);
   svgEl("circle", { cx: x(last.t), cy: y(last.v), r: 4, fill: opts.color, class: "dot" }, svg);
@@ -221,6 +250,14 @@ export function stackedColumns(container, rows, series, opts) {
       tip.hide();
     });
   });
+
+  // trend of the column totals, through the column centers
+  if (opts.trend) {
+    const span = t1 - t0 || 1;
+    const xT = (t) => xCenter(0) + ((t - t0) / span) * (xCenter(rows.length - 1) - xCenter(0));
+    const line = svgEl("g", { "pointer-events": "none" }, svg);
+    drawTrend(line, opts.trend, xT, y);
+  }
 }
 
 /** Horizontal bars. rows: [{ label, value }]; value label at the bar tip. */

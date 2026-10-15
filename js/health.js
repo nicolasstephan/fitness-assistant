@@ -1,5 +1,5 @@
 // Health dashboard: WHOOP history (health/whoop.json in the private data repo).
-import { lineChart, stackedColumns, hBars, dataTable } from "./charts.js";
+import { lineChart, stackedColumns, hBars, dataTable, linearTrend } from "./charts.js";
 
 const DAY = 86400000;
 const RANGES = { 30: 30, 90: 90, 365: 365, all: Infinity };
@@ -137,20 +137,46 @@ export class HealthView {
     this.pendingDraws = [];
     const blue = css("--series-1");
 
-    const lineCard = (title, sub, get, opts, unitLabel) => {
+    const trendColor = css("--trend");
+    const period = { 30: "30 days", 90: "90 days", 365: "1 year", all: "the whole period" }[this.range];
+    // trend verdict: change of the fitted line from first to last day, e.g. "▼ 1.8 bpm over 1 year · improved".
+    // A slope that isn't clearly above the day-to-day noise (|t| < 2) reads as "no clear trend".
+    const verdict = (trend, fmtDelta, higherIsGood) => {
+      if (!trend) return null;
+      const shown = fmtDelta(Math.abs(trend.delta));
+      const up = trend.delta > 0;
+      if (Math.abs(trend.tStat) < 2) return { text: `${up ? "▲" : "▼"} ${shown} over ${period} · no clear trend`, cls: "" };
+      const good = higherIsGood == null ? null : up === higherIsGood;
+      return {
+        text: `${up ? "▲" : "▼"} ${shown} over ${period}${good == null ? "" : good ? " · improved" : " · worsened"}`,
+        cls: good == null ? "" : good ? "good" : "bad",
+      };
+    };
+    const lineKeys = (weekly) => [
+      { name: weekly ? "Weekly average" : "Daily", color: blue, line: true },
+      { name: "Trend", color: trendColor, line: true },
+    ];
+
+    const lineCard = (title, sub, get, opts, unitLabel, fmtDelta, higherIsGood) => {
       const b = this.bucket(cur, get);
+      const trend = linearTrend(b.points);
       this.card(cards, title, `${sub}${b.weekly ? " · weekly average" : ""}`,
-        (el) => lineChart(el, b.points, { color: blue, describe: b.describe, ...opts }),
+        (el) => lineChart(el, b.points, { color: blue, describe: b.describe, trend, ...opts }),
         [
           { label: b.weekly ? "Week of" : "Date", get: (p) => new Date(p.t).toISOString().slice(0, 10) },
           { label: unitLabel, get: (p) => (p.v == null ? null : opts.format(p.v)), num: true },
+          { label: "Trend", get: (p) => (trend ? opts.format(trend.at(p.t)) : null), num: true },
         ],
-        b.points);
+        b.points,
+        lineKeys(b.weekly),
+        verdict(trend, fmtDelta, higherIsGood));
     };
 
-    lineCard("Recovery", "Morning recovery score, %", (d) => d.recovery, { ticks: [0, 25, 50, 75, 100], unit: "%", format: (v) => `${Math.round(v)}` }, "Recovery %");
-    lineCard("Heart rate variability", "During sleep, ms", (d) => d.hrv, { unit: "ms", format: (v) => `${Math.round(v)}` }, "HRV (ms)");
-    lineCard("Resting heart rate", "bpm", (d) => d.rhr, { unit: "bpm", format: (v) => `${Math.round(v)}` }, "RHR (bpm)");
+    const round = (unit) => (d) => `${Math.round(d)} ${unit === "pts" && Math.round(d) === 1 ? "pt" : unit}`;
+    const oneDecimal = (unit) => (d) => `${d.toFixed(1)}${unit ? ` ${unit}` : ""}`;
+    lineCard("Recovery", "Morning recovery score, %", (d) => d.recovery, { ticks: [0, 25, 50, 75, 100], unit: "%", format: (v) => `${Math.round(v)}` }, "Recovery %", round("pts"), true);
+    lineCard("Heart rate variability", "During sleep, ms", (d) => d.hrv, { unit: "ms", format: (v) => `${Math.round(v)}` }, "HRV (ms)", round("ms"), true);
+    lineCard("Resting heart rate", "bpm", (d) => d.rhr, { unit: "bpm", format: (v) => `${Math.round(v)}` }, "RHR (bpm)", oneDecimal("bpm"), false);
 
     // sleep stages, hours
     const stages = [
@@ -163,16 +189,20 @@ export class HealthView {
       const ds = p.days ?? [p.day];
       return { t: p.t, values: stages.map((st) => { const m = mean(ds.map((d) => d.sleep[st.key])); return m == null ? 0 : m / 60; }) };
     });
+    // trend of total hours asleep (sum of the stacked stages)
+    const sleepTrend = linearTrend(sleepRows.map((r) => ({ t: r.t, v: r.values.some((v) => v > 0) ? r.values.reduce((a, b) => a + b, 0) : null })));
     this.card(cards, "Sleep stages", `Hours asleep per night${sb.weekly ? " · weekly average" : ""}`,
-      (el) => stackedColumns(el, sleepRows, stages, { unit: "h", describe: sb.describe, format: (v) => hm(v * 60) }),
+      (el) => stackedColumns(el, sleepRows, stages, { unit: "h", describe: sb.describe, format: (v) => hm(v * 60), trend: sleepTrend }),
       [
         { label: sb.weekly ? "Week of" : "Date", get: (r) => new Date(r.t).toISOString().slice(0, 10) },
         ...stages.map((st, k) => ({ label: `${st.name} (h)`, get: (r) => hm(r.values[k] * 60), num: true })),
+        { label: "Trend total (h)", get: (r) => (sleepTrend ? hm(sleepTrend.at(r.t) * 60) : null), num: true },
       ],
       sleepRows,
-      stages);
+      [...stages, { name: "Trend (total)", color: trendColor, line: true }],
+      verdict(sleepTrend, (d) => `${Math.round(d * 60)} min`, true));
 
-    lineCard("Day strain", "WHOOP strain, 0–21", (d) => d.strain, { ticks: [0, 7, 14, 21], tickFormat: (v) => `${v}`, format: (v) => v.toFixed(1) }, "Strain");
+    lineCard("Day strain", "WHOOP strain, 0–21", (d) => d.strain, { ticks: [0, 7, 14, 21], tickFormat: (v) => `${v}`, format: (v) => v.toFixed(1) }, "Strain", oneDecimal(""), null);
 
     // workouts by activity (hours), top 6 + Other
     const byActivity = new Map();
@@ -240,7 +270,7 @@ export class HealthView {
   }
 
   /** A chart card with a Chart/Table toggle. Returns the card element. */
-  card(parent, title, subtitle, drawChart, tableColumns, tableRows, legend) {
+  card(parent, title, subtitle, drawChart, tableColumns, tableRows, legend, summary) {
     const card = document.createElement("article");
     card.className = "card";
     const head = document.createElement("header");
@@ -263,8 +293,15 @@ export class HealthView {
         const item = document.createElement("span");
         const sw = document.createElement("i");
         sw.style.background = s.color;
+        if (s.line) sw.className = "line-key"; // legends mirror the mark: short stroke for lines
         item.append(sw, document.createTextNode(s.name));
         lg.appendChild(item);
+      }
+      if (summary) {
+        const v = document.createElement("strong");
+        v.className = `trend-verdict ${summary.cls}`;
+        v.textContent = summary.text;
+        lg.appendChild(v);
       }
       card.appendChild(lg);
     }
