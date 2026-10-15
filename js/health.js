@@ -62,7 +62,7 @@ export class HealthView {
       const t = tUTC(w.start.slice(0, 10));
       return t >= prevStart && t < start;
     });
-    return { cur, prev, workouts, prevWorkouts, start, end };
+    return { days, cur, prev, workouts, prevWorkouts, start, end };
   }
 
   /** Daily points up to ~3 months, weekly means (Monday-based) beyond. */
@@ -101,6 +101,7 @@ export class HealthView {
       tile("Avg HRV", ...avg((d) => d.hrv), (v) => `${Math.round(v)} ms`, (d) => `${Math.round(d)} ms`, true),
       tile("Avg resting heart rate", ...avg((d) => d.rhr), (v) => `${Math.round(v)} bpm`, (d) => `${Math.round(d)} bpm`, false),
       tile("Avg sleep per night", ...avg((d) => d.sleep.asleepMin), (v) => `${hm(v)} h`, (d) => `${Math.round(d)} min`, true),
+      tile("Avg sleep score", ...avg((d) => d.sleep.performance), (v) => `${Math.round(v)}%`, (d) => `${Math.round(d)} pts`, true),
       tile("Workouts", workouts.length, prevWorkouts?.length ?? null, (v) => `${v}`, (d) => `${Math.round(d)}`, null),
     ];
     const el = this.root.querySelector("#health-tiles");
@@ -130,17 +131,37 @@ export class HealthView {
     );
   }
 
-  renderCards({ cur, workouts }) {
+  /**
+   * Trailing rolling mean over `window` calendar days, for each day in `cur`.
+   * Uses all days (also before the range) and needs at least half the window filled.
+   */
+  rolling(days, cur, get, window) {
+    const byT = new Map(days.map((d) => [d.t, get(d)]));
+    return cur.map((d) => {
+      const vals = [];
+      for (let k = 0; k < window; k++) {
+        const v = byT.get(d.t - k * DAY);
+        if (v != null) vals.push(v);
+      }
+      return { t: d.t, v: vals.length >= window / 2 ? mean(vals) : null };
+    });
+  }
+
+  renderCards({ days, cur, workouts }) {
     const cards = this.root.querySelector("#health-cards");
     cards.replaceChildren();
     // charts are sized from their container, so draw only once every card is in the grid
     this.pendingDraws = [];
     const blue = css("--series-1");
-
     const trendColor = css("--trend");
+    const long = this.range === "365" || this.range === "all";
+    const window = this.range === "30" ? 7 : 30;
+    const smoothLabel = `${window}-day average`;
     const period = { 30: "30 days", 90: "90 days", 365: "1 year", all: "the whole period" }[this.range];
-    // trend verdict: change of the fitted line from first to last day, e.g. "▼ 1.8 bpm over 1 year · improved".
-    // A slope that isn't clearly above the day-to-day noise (|t| < 2) reads as "no clear trend".
+
+    // Straight-line verdict, only for long ranges. It is fitted on weekly means, which are far less
+    // autocorrelated than days, e.g. "▼ 1.8 bpm over 1 year · improved". A slope that does not clear
+    // the noise (|t| < 2) reads as "no clear trend".
     const verdict = (trend, fmtDelta, higherIsGood) => {
       if (!trend) return null;
       const shown = fmtDelta(Math.abs(trend.delta));
@@ -152,55 +173,67 @@ export class HealthView {
         cls: good == null ? "" : good ? "good" : "bad",
       };
     };
-    const lineKeys = (weekly) => [
-      { name: weekly ? "Weekly average" : "Daily", color: blue, line: true },
-      { name: "Trend", color: trendColor, line: true },
+    const keys = (weekly, color, trend) => [
+      { name: smoothLabel, color, line: true },
+      { name: weekly ? "Weekly average" : "Daily", color, line: true, faint: true },
+      ...(trend ? [{ name: "Trend", color: trendColor, line: true }] : []),
     ];
 
     const lineCard = (title, sub, get, opts, unitLabel, fmtDelta, higherIsGood) => {
       const b = this.bucket(cur, get);
-      const trend = linearTrend(b.points);
-      this.card(cards, title, `${sub}${b.weekly ? " · weekly average" : ""}`,
-        (el) => lineChart(el, b.points, { color: blue, describe: b.describe, trend, ...opts }),
+      const smooth = this.rolling(days, cur, get, window);
+      const trend = long ? linearTrend(b.points) : null;
+      const byT = new Map(smooth.map((p) => [p.t, p.v]));
+      this.card(cards, title, sub,
+        (el) => lineChart(el, b.points, {
+          color: blue, describe: b.describe, trend,
+          smooth: { points: smooth, label: smoothLabel }, baseLabel: b.weekly ? "weekly average" : "that day",
+          ...opts,
+        }),
         [
           { label: b.weekly ? "Week of" : "Date", get: (p) => new Date(p.t).toISOString().slice(0, 10) },
           { label: unitLabel, get: (p) => (p.v == null ? null : opts.format(p.v)), num: true },
-          { label: "Trend", get: (p) => (trend ? opts.format(trend.at(p.t)) : null), num: true },
+          ...(b.weekly ? [] : [{ label: smoothLabel, get: (p) => (byT.get(p.t) == null ? null : opts.format(byT.get(p.t))), num: true }]),
+          ...(trend ? [{ label: "Trend", get: (p) => opts.format(trend.at(p.t)), num: true }] : []),
         ],
         b.points,
-        lineKeys(b.weekly),
-        verdict(trend, fmtDelta, higherIsGood));
+        keys(b.weekly, blue, trend),
+        long ? verdict(trend, fmtDelta, higherIsGood) : null);
     };
 
     const round = (unit) => (d) => `${Math.round(d)} ${unit === "pts" && Math.round(d) === 1 ? "pt" : unit}`;
     const oneDecimal = (unit) => (d) => `${d.toFixed(1)}${unit ? ` ${unit}` : ""}`;
-    lineCard("Recovery", "Morning recovery score, %", (d) => d.recovery, { ticks: [0, 25, 50, 75, 100], unit: "%", format: (v) => `${Math.round(v)}` }, "Recovery %", round("pts"), true);
+    const pct = { ticks: [0, 25, 50, 75, 100], unit: "%", format: (v) => `${Math.round(v)}` };
+    lineCard("Recovery", "Morning recovery score, %", (d) => d.recovery, pct, "Recovery %", round("pts"), true);
     lineCard("Heart rate variability", "During sleep, ms", (d) => d.hrv, { unit: "ms", format: (v) => `${Math.round(v)}` }, "HRV (ms)", round("ms"), true);
     lineCard("Resting heart rate", "bpm", (d) => d.rhr, { unit: "bpm", format: (v) => `${Math.round(v)}` }, "RHR (bpm)", oneDecimal("bpm"), false);
+    lineCard("Sleep score", "WHOOP sleep performance: sleep you got vs. sleep you needed, %", (d) => d.sleep.performance, pct, "Sleep score %", round("pts"), true);
 
-    // sleep stages, hours
+    // sleep stages, hours; rolling average and trend of the total
     const stages = [
       { name: "Deep", key: "deepMin", color: css("--series-1") },
       { name: "REM", key: "remMin", color: css("--series-2") },
       { name: "Light", key: "lightMin", color: css("--series-3") },
     ];
-    const sb = this.bucket(cur, (d) => d.sleep.asleepMin);
+    const asleepH = (d) => (d.sleep.asleepMin == null ? null : d.sleep.asleepMin / 60);
+    const sb = this.bucket(cur, asleepH);
     const sleepRows = sb.points.map((p) => {
       const ds = p.days ?? [p.day];
       return { t: p.t, values: stages.map((st) => { const m = mean(ds.map((d) => d.sleep[st.key])); return m == null ? 0 : m / 60; }) };
     });
-    // trend of total hours asleep (sum of the stacked stages)
-    const sleepTrend = linearTrend(sleepRows.map((r) => ({ t: r.t, v: r.values.some((v) => v > 0) ? r.values.reduce((a, b) => a + b, 0) : null })));
+    const sleepSmooth = this.rolling(days, cur, asleepH, window);
+    const sleepTrend = long ? linearTrend(sb.points) : null;
     this.card(cards, "Sleep stages", `Hours asleep per night${sb.weekly ? " · weekly average" : ""}`,
-      (el) => stackedColumns(el, sleepRows, stages, { unit: "h", describe: sb.describe, format: (v) => hm(v * 60), trend: sleepTrend }),
+      (el) => stackedColumns(el, sleepRows, stages, { unit: "h", describe: sb.describe, format: (v) => hm(v * 60), trend: sleepTrend, smooth: sleepSmooth }),
       [
         { label: sb.weekly ? "Week of" : "Date", get: (r) => new Date(r.t).toISOString().slice(0, 10) },
         ...stages.map((st, k) => ({ label: `${st.name} (h)`, get: (r) => hm(r.values[k] * 60), num: true })),
-        { label: "Trend total (h)", get: (r) => (sleepTrend ? hm(sleepTrend.at(r.t) * 60) : null), num: true },
+        ...(sleepTrend ? [{ label: "Trend total (h)", get: (r) => hm(sleepTrend.at(r.t) * 60), num: true }] : []),
       ],
       sleepRows,
-      [...stages, { name: "Trend (total)", color: trendColor, line: true }],
-      verdict(sleepTrend, (d) => `${Math.round(d * 60)} min`, true));
+      [...stages, { name: `${smoothLabel} (total)`, color: css("--text"), line: true },
+        ...(sleepTrend ? [{ name: "Trend (total)", color: trendColor, line: true }] : [])],
+      long ? verdict(sleepTrend, (d) => `${Math.round(d * 60)} min`, true) : null);
 
     lineCard("Day strain", "WHOOP strain, 0–21", (d) => d.strain, { ticks: [0, 7, 14, 21], tickFormat: (v) => `${v}`, format: (v) => v.toFixed(1) }, "Strain", oneDecimal(""), null);
 
@@ -214,9 +247,53 @@ export class HealthView {
       [{ label: "Activity", get: (r) => r.label }, { label: "Hours", get: (r) => r.value.toFixed(1), num: true }],
       rows);
 
+    this.periodCard(cards, cur, workouts);
     this.journalCard(cards, cur);
     this.workoutsCard(cards, workouts);
     this.pendingDraws.forEach((draw) => draw());
+  }
+
+  /** Averages per week (30 days), month (90 days) or quarter (longer), oldest first. */
+  periodCard(cards, cur, workouts) {
+    const unit = this.range === "30" ? "week" : this.range === "90" ? "month" : "quarter";
+    const keyOf = (t) => {
+      const d = new Date(t);
+      if (unit === "week") return t - ((d.getUTCDay() + 6) % 7) * DAY;
+      if (unit === "month") return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+      return Date.UTC(d.getUTCFullYear(), Math.floor(d.getUTCMonth() / 3) * 3, 1);
+    };
+    const label = (k) => {
+      const d = new Date(k);
+      if (unit === "week") return `Week of ${d.toLocaleDateString(undefined, { timeZone: "UTC", day: "numeric", month: "short" })}`;
+      if (unit === "month") return d.toLocaleDateString(undefined, { timeZone: "UTC", month: "long", year: "numeric" });
+      return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;
+    };
+    const groups = new Map();
+    for (const d of cur) {
+      const k = keyOf(d.t);
+      if (!groups.has(k)) groups.set(k, { k, days: [], workouts: 0 });
+      groups.get(k).days.push(d);
+    }
+    for (const w of workouts) {
+      const g = groups.get(keyOf(w.t));
+      if (g) g.workouts++;
+    }
+    const rows = [...groups.values()].sort((a, b) => a.k - b.k);
+    const avg = (g, get) => mean(g.days.map(get));
+    const fixed = (v, digits) => (v == null ? null : v.toFixed(digits));
+
+    const card = this.card(cards, `By ${unit}`, `Averages per ${unit}; the Days column shows partial ${unit}s at the edges`, null, null, null);
+    dataTable(card.querySelector(".card-body"), [
+      { label: unit[0].toUpperCase() + unit.slice(1), get: (g) => label(g.k) },
+      { label: "Days", get: (g) => g.days.length, num: true },
+      { label: "Recovery %", get: (g) => fixed(avg(g, (d) => d.recovery), 0), num: true },
+      { label: "HRV", get: (g) => fixed(avg(g, (d) => d.hrv), 0), num: true },
+      { label: "RHR", get: (g) => fixed(avg(g, (d) => d.rhr), 1), num: true },
+      { label: "Sleep", get: (g) => { const v = avg(g, (d) => d.sleep.asleepMin); return v == null ? null : hm(v); }, num: true },
+      { label: "Sleep score", get: (g) => fixed(avg(g, (d) => d.sleep.performance), 0), num: true },
+      { label: "Strain", get: (g) => fixed(avg(g, (d) => d.strain), 1), num: true },
+      { label: "Workouts", get: (g) => g.workouts, num: true },
+    ], rows);
   }
 
   journalCard(cards, cur) {
@@ -243,9 +320,19 @@ export class HealthView {
       { label: "Question", get: (r) => r.q },
       { label: "Yes", get: (r) => `${Math.round(r.yes)}% (${r.nYes})`, num: true },
       { label: "No", get: (r) => `${Math.round(r.no)}% (${r.nNo})`, num: true },
-      { label: "Difference", get: (r) => `${r.diff >= 0 ? "▲ +" : "▼ −"}${Math.abs(Math.round(r.diff))} pts`, num: true },
+      {
+        label: "Difference",
+        get: (r) => {
+          const n = Math.round(r.diff);
+          return n === 0 ? "± 0 pts" : `${n > 0 ? "▲ +" : "▼ −"}${Math.abs(n)} ${Math.abs(n) === 1 ? "pt" : "pts"}`;
+        },
+        num: true,
+      },
     ], rows);
-    body.querySelectorAll("tbody tr").forEach((tr, i) => tr.lastElementChild.classList.add(rows[i].diff >= 0 ? "good" : "bad"));
+    body.querySelectorAll("tbody tr").forEach((tr, i) => {
+      const n = Math.round(rows[i].diff);
+      if (n !== 0) tr.lastElementChild.classList.add(n > 0 ? "good" : "bad");
+    });
     const note = document.createElement("p");
     note.className = "card-note";
     note.textContent = "Associations, not causes: e.g. caffeine days may also be short-sleep days.";
@@ -293,7 +380,7 @@ export class HealthView {
         const item = document.createElement("span");
         const sw = document.createElement("i");
         sw.style.background = s.color;
-        if (s.line) sw.className = "line-key"; // legends mirror the mark: short stroke for lines
+        if (s.line) sw.className = s.faint ? "line-key faint" : "line-key"; // legends mirror the mark: short stroke for lines
         item.append(sw, document.createTextNode(s.name));
         lg.appendChild(item);
       }

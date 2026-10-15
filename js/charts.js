@@ -132,17 +132,22 @@ function yAxis(svg, ticks, y, x0, x1, fmt) {
 
 /**
  * Time series line. points: [{ t (UTC ms), v (number|null) }]; gaps where v is null.
- * opts: { color, format, unit, ticks (fixed y ticks, optional), trend (from linearTrend, optional), describe(t) }
+ * opts: { color, format, unit, describe(t),
+ *         ticks (fixed y ticks), tickFormat,
+ *         smooth: { points, label } - rolling average drawn bold; `points` then render faint,
+ *         baseLabel - tooltip label for `points`, trend (from linearTrend) - straight line }
  */
 export function lineChart(container, points, opts) {
   const { svg, width, height, tip } = frame(container, opts.height ?? 180);
-  const vals = points.map((p) => p.v).filter((v) => v != null);
+  const smooth = opts.smooth?.points ?? null;
+  const all = smooth ? [...points, ...smooth] : points;
+  const vals = all.map((p) => p.v).filter((v) => v != null);
   if (!vals.length) return;
-  const t0 = points[0].t, t1 = points.at(-1).t;
+  const t0 = Math.min(...all.map((p) => p.t)), t1 = Math.max(...all.map((p) => p.t));
   const ticks = opts.ticks ?? niceTicks(Math.min(...vals), Math.max(...vals));
   const [lo, hi] = [ticks[0], ticks.at(-1)];
   const x = (t) => PAD.left + ((t - t0) / (t1 - t0 || 1)) * (width - PAD.left - PAD.right);
-  const y = (v) => PAD.top + (1 - (v - lo) / (hi - lo || 1)) * (height - PAD.top - PAD.bottom);
+  const y = (v) => PAD.top + (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo || 1)) * (height - PAD.top - PAD.bottom);
   const fmt = opts.format ?? ((v) => `${Math.round(v)}`);
 
   yAxis(svg, ticks, y, PAD.left, width - PAD.right, opts.tickFormat ?? fmt);
@@ -151,37 +156,53 @@ export function lineChart(container, points, opts) {
     svgEl("text", { x: x(t), y: height - 6, class: "tick", "text-anchor": "middle" }, svg).textContent = tt.fmt(t);
   }
 
-  let d = "";
-  let pen = false;
-  for (const p of points) {
-    if (p.v == null) { pen = false; continue; }
-    d += `${pen ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
-    pen = true;
-  }
-  svgEl("path", { d, class: "line", stroke: opts.color }, svg);
+  const pathOf = (ps) => {
+    let d = "";
+    let pen = false;
+    for (const p of ps) {
+      if (p.v == null) { pen = false; continue; }
+      d += `${pen ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
+      pen = true;
+    }
+    return d;
+  };
+  svgEl("path", { d: pathOf(points), class: smooth ? "line faint" : "line", stroke: opts.color }, svg);
   if (opts.trend) drawTrend(svg, opts.trend, x, y);
+  if (smooth) svgEl("path", { d: pathOf(smooth), class: "line", stroke: opts.color }, svg);
 
-  const last = [...points].reverse().find((p) => p.v != null);
-  svgEl("circle", { cx: x(last.t), cy: y(last.v), r: 4, fill: opts.color, class: "dot" }, svg);
-  svgEl("text", { x: x(last.t) + 8, y: y(last.v), class: "end-label", "dominant-baseline": "middle" }, svg).textContent = fmt(last.v);
+  const main = smooth ?? points;
+  const last = [...main].reverse().find((p) => p.v != null);
+  if (last) {
+    svgEl("circle", { cx: x(last.t), cy: y(last.v), r: 4, fill: opts.color, class: "dot" }, svg);
+    svgEl("text", { x: x(last.t) + 8, y: y(last.v), class: "end-label", "dominant-baseline": "middle" }, svg).textContent = fmt(last.v);
+  }
 
-  // crosshair snaps to the nearest point
+  // crosshair snaps to the nearest base point; the readout lists every series at that x
+  const nearest = (ps, px) => {
+    let best = null;
+    for (const p of ps) if (p.v != null && (!best || Math.abs(x(p.t) - px) < Math.abs(x(best.t) - px))) best = p;
+    return best;
+  };
+  const unit = opts.unit ? ` ${opts.unit}` : "";
   const cross = svgEl("line", { y1: PAD.top, y2: height - PAD.bottom, class: "crosshair", visibility: "hidden" }, svg);
   const hoverDot = svgEl("circle", { r: 4, fill: opts.color, class: "dot", visibility: "hidden" }, svg);
   const hit = svgEl("rect", { x: PAD.left, y: 0, width: width - PAD.left - PAD.right, height, fill: "transparent" }, svg);
   const move = (e) => {
-    const r = svg.getBoundingClientRect();
-    const px = e.clientX - r.left;
-    let best = null;
-    for (const p of points) if (p.v != null && (!best || Math.abs(x(p.t) - px) < Math.abs(x(best.t) - px))) best = p;
+    const px = e.clientX - svg.getBoundingClientRect().left;
+    const best = nearest(points, px) ?? nearest(main, px);
     if (!best) return;
+    const s = smooth ? nearest(smooth, x(best.t)) : null;
     cross.setAttribute("x1", x(best.t));
     cross.setAttribute("x2", x(best.t));
     cross.setAttribute("visibility", "visible");
     hoverDot.setAttribute("cx", x(best.t));
-    hoverDot.setAttribute("cy", y(best.v));
+    hoverDot.setAttribute("cy", y((s ?? best).v));
     hoverDot.setAttribute("visibility", "visible");
-    tip.show(x(best.t), y(best.v), opts.describe(best.t), [{ value: `${fmt(best.v)}${opts.unit ? ` ${opts.unit}` : ""}`, color: opts.color }]);
+    const rows = [];
+    if (s) rows.push({ value: `${fmt(s.v)}${unit}`, label: opts.smooth.label, color: opts.color });
+    rows.push({ value: `${fmt(best.v)}${unit}`, label: smooth ? opts.baseLabel : "", color: smooth ? null : opts.color });
+    if (opts.trend) rows.push({ value: `${fmt(opts.trend.at(best.t))}${unit}`, label: "trend" });
+    tip.show(x(best.t), y((s ?? best).v), opts.describe(best.t), rows);
   };
   hit.addEventListener("pointermove", move);
   hit.addEventListener("pointerdown", move);
@@ -194,7 +215,7 @@ export function lineChart(container, points, opts) {
 
 /**
  * Stacked columns. rows: [{ t, values: [..] }], series: [{ name, color }] bottom-up.
- * opts: { format, unit, describe(t) }
+ * opts: { format, unit, describe(t), smooth: [{ t, v }] rolling average of the total, trend (from linearTrend) }
  */
 export function stackedColumns(container, rows, series, opts) {
   const { svg, width, height, tip } = frame(container, opts.height ?? 200);
@@ -251,12 +272,22 @@ export function stackedColumns(container, rows, series, opts) {
     });
   });
 
-  // trend of the column totals, through the column centers
-  if (opts.trend) {
+  // rolling average and trend of the column totals, mapped onto the column centers
+  if (opts.trend || opts.smooth) {
     const span = t1 - t0 || 1;
     const xT = (t) => xCenter(0) + ((t - t0) / span) * (xCenter(rows.length - 1) - xCenter(0));
-    const line = svgEl("g", { "pointer-events": "none" }, svg);
-    drawTrend(line, opts.trend, xT, y);
+    const overlay = svgEl("g", { "pointer-events": "none" }, svg);
+    if (opts.smooth) {
+      let d = "";
+      let pen = false;
+      for (const p of opts.smooth) {
+        if (p.v == null || p.t < t0) { pen = false; continue; }
+        d += `${pen ? "L" : "M"}${xT(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
+        pen = true;
+      }
+      svgEl("path", { d, class: "line overlay" }, overlay);
+    }
+    if (opts.trend) drawTrend(overlay, opts.trend, xT, y);
   }
 }
 

@@ -298,6 +298,22 @@ dialog input {
 .primary-btn:disabled { opacity: 0.6; }
 .ghost.danger { color: var(--primary); }
 
+.list li small.last-session { color: var(--text); opacity: 0.75; }
+.list li .ghost.small { flex: none; }
+
+.log-dialog { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+.log-dialog h3 { margin: 16px 0 4px; font-size: 14px; }
+.log-chart { margin: 4px 0 8px; }
+.log-history { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.log-history li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+.log-history .icon-btn { width: 26px; height: 26px; font-size: 15px; }
+.date-label { max-width: 180px; }
+.set-row { display: grid; grid-template-columns: 52px 1fr 1fr 32px; gap: 8px; align-items: end; margin-top: 8px; }
+.set-row label { margin-top: 0; }
+.set-row input { width: 100%; min-width: 0; }
+.set-no { font-size: 13px; color: var(--muted); padding-bottom: 9px; }
+#log-add-set { margin-top: 10px; }
+
 .credits { padding: 10px 16px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
 .credits a { color: inherit; }
 
@@ -362,6 +378,9 @@ body[data-view="health"] .layout { display: none; }
 .chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .dot { stroke: var(--panel); stroke-width: 2; }
 .chart .end-label { fill: var(--text); font-size: 12px; font-weight: 600; }
+.chart .line.faint { stroke-width: 1.5; opacity: 0.3; }
+.chart .line.overlay { stroke: var(--text); }
+.legend-row i.line-key.faint { opacity: 0.3; }
 .chart .trend { stroke: var(--trend); stroke-width: 1.5; stroke-linecap: round; }
 .chart .crosshair { stroke: var(--axis-ink); stroke-width: 1; }
 .chart .col.hover path { opacity: 0.8; }

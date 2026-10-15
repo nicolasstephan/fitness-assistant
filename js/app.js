@@ -3,6 +3,8 @@ import { EXERCISES } from "./data/exercises.js";
 import { MUSCLE_GROUPS, REGIONS, groupById } from "./data/muscle-groups.js";
 import { GitHubStore } from "./github-store.js";
 import { HealthView } from "./health.js";
+import { SyncedDoc, readLocal, writeLocal } from "./synced-doc.js";
+import { LogDialog, normalizeLog, mergeLogs, lastSessionText } from "./training-log.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -53,96 +55,96 @@ function showSummary(primary, secondary) {
   }
 }
 
-// ---------- my exercises: cached in this browser, synced to a private GitHub repo when connected
+// ---------- synced data: "my exercises" (profile.json) and the training log (training-log.json)
 
-const STORAGE_KEY = "fa.myExercises";
-const DIRTY_KEY = "fa.unsynced"; // local changes not yet pushed to GitHub
 const SYNC_KEY = "fa.sync"; // { repo, token }
 const exerciseById = new Map(EXERCISES.map((e) => [e.id, e]));
-const validIds = (ids) => (Array.isArray(ids) ? ids.filter((id) => exerciseById.has(id)) : []);
+const validIds = (ids) => (Array.isArray(ids) ? [...new Set(ids.filter((id) => exerciseById.has(id)))] : []);
 
-function readLocal(key, fallback) {
-  try {
-    return JSON.parse(localStorage.getItem(key)) ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
+const profile = new SyncedDoc({
+  key: "fa.myExercises",
+  dirtyKey: "fa.unsynced",
+  path: "profile.json",
+  message: "Update my exercises",
+  // older versions cached a bare array of ids
+  normalize: (raw) => ({ version: 1, myExercises: validIds(Array.isArray(raw) ? raw : raw?.myExercises) }),
+  merge: (remote, local) => ({ version: 1, myExercises: validIds([...remote.myExercises, ...local.myExercises]) }),
+});
 
-function writeLocal(key, value) {
-  try {
-    if (value === undefined) localStorage.removeItem(key);
-    else localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // storage unavailable (private mode): data lives for this session only
-  }
-}
+const trainingLog = new SyncedDoc({
+  key: "fa.trainingLog",
+  dirtyKey: "fa.trainingLog.unsynced",
+  path: "training-log.json",
+  message: "Update training log",
+  normalize: normalizeLog,
+  merge: mergeLogs,
+});
 
-const loadMyExercises = () => validIds(readLocal(STORAGE_KEY, []));
+let syncRepo = null; // repo name while connected
+const syncState = new Map(); // doc -> { state, message }
 
-function saveMyExercises() {
-  writeLocal(STORAGE_KEY, state.mine);
-  if (store) {
-    writeLocal(DIRTY_KEY, true);
-    scheduleSync();
-  }
-}
-
-let store = null;
-let syncTimer = null;
-
-function setSyncStatus(text, kind = "") {
+function renderSyncStatus() {
   const el = $("#sync-status");
-  el.textContent = text;
-  el.dataset.kind = kind;
-}
-
-function scheduleSync() {
-  clearTimeout(syncTimer);
-  setSyncStatus("Saving…");
-  syncTimer = setTimeout(pushToGitHub, 800);
-}
-
-async function pushToGitHub() {
-  try {
-    await store.save({ version: 1, updatedAt: new Date().toISOString(), myExercises: state.mine }, "Update my exercises");
-    writeLocal(DIRTY_KEY, undefined);
-    setSyncStatus(`Synced to ${store.repo}`, "ok");
-  } catch (err) {
-    setSyncStatus(`Not synced: ${err.message}`, "error");
+  if (!syncRepo) {
+    el.textContent = "This device only — tap to sync";
+    el.dataset.kind = "";
+    return;
+  }
+  const states = [...syncState.values()];
+  const error = states.find((s) => s.state === "error");
+  if (error) {
+    el.textContent = `Not synced: ${error.message}`;
+    el.dataset.kind = "error";
+  } else if (states.some((s) => s.state === "saving")) {
+    el.textContent = "Saving…";
+    el.dataset.kind = "";
+  } else {
+    el.textContent = `Synced to ${syncRepo}`;
+    el.dataset.kind = "ok";
   }
 }
 
-/** Load from GitHub. Unsynced local changes (or a first connect with `merge`) are combined with the remote list. */
-async function connectGitHub(cfg, { merge = false } = {}) {
-  store = new GitHubStore(cfg);
-  setSyncStatus("Loading from GitHub…");
-  const remote = await store.load();
-  const remoteIds = validIds(remote?.myExercises);
-  const localWins = merge || readLocal(DIRTY_KEY, false);
-  const ids = localWins ? [...new Set([...remoteIds, ...state.mine])] : remoteIds;
-  state.mine = ids;
-  readHash(); // the URL may select exercises that only the remote list contains
-  writeLocal(STORAGE_KEY, ids);
+for (const doc of [profile, trainingLog]) {
+  doc.onStatus = (state, message) => {
+    syncState.set(doc, { state, message });
+    renderSyncStatus();
+  };
+}
+
+profile.onChange = (doc) => {
+  state.mine = doc.myExercises;
+  readHash(); // the URL may select exercises that only the synced list contains
   renderMyExercises();
-  if (!remote || (localWins && ids.join() !== remoteIds.join())) await pushToGitHub();
-  else setSyncStatus(`Synced to ${store.repo}`, "ok");
-  loadHealth();
+};
+trainingLog.onChange = () => renderMyExercises();
+
+const saveMyExercises = () => profile.update({ version: 1, myExercises: state.mine });
+
+/** Connect both documents; `merge` keeps this device's data on a first connect. */
+async function connectGitHub(cfg, { merge = false } = {}) {
+  syncRepo = cfg.repo;
+  syncState.clear();
+  $("#sync-status").textContent = "Loading from GitHub…";
+  await Promise.all([profile.connect(cfg, { merge }), trainingLog.connect(cfg, { merge })]);
+  loadHealth(cfg);
+}
+
+function disconnectGitHub() {
+  profile.disconnect();
+  trainingLog.disconnect();
+  syncRepo = null;
+  renderSyncStatus();
 }
 
 // ---------- health data (health/whoop.json in the data repo), cached for offline use
 
 const HEALTH_CACHE_KEY = "fa.health";
 
-async function loadHealth() {
-  if (!store) {
-    health.setMessage("Connect GitHub sync (⚙) to load your health data.");
-    return;
-  }
+async function loadHealth(cfg) {
   try {
-    const doc = await new GitHubStore({ repo: store.repo, token: store.token, path: "health/whoop.json" }).loadRaw();
+    const doc = await new GitHubStore({ ...cfg, path: "health/whoop.json" }).loadRaw();
     if (!doc) {
-      health.setMessage(`No health data in ${store.repo} yet.`);
+      health.setMessage(`No health data in ${cfg.repo} yet.`);
       return;
     }
     health.setMessage("");
@@ -173,9 +175,13 @@ function renderMyExercises() {
     ? "Tap exercises to see which muscles they train."
     : "No exercises yet. Search above and tap + to add one.";
   $("#exercise-list").innerHTML = mine
-    .map((e) => `<li data-id="${e.id}">
-      <div class="li-text"><span>${e.name}</span><small>${primaryLabels(e)}</small></div>
-      <button class="icon-btn" data-remove="${e.id}" aria-label="Remove ${e.name}">×</button></li>`)
+    .map((e) => {
+      const last = lastSessionText(trainingLog.doc, e.id);
+      return `<li data-id="${e.id}">
+      <div class="li-text"><span>${e.name}</span><small>${primaryLabels(e)}</small>${last ? `<small class="last-session">${last}</small>` : ""}</div>
+      <button class="ghost small" data-log="${e.id}" aria-label="Log a session of ${e.name}">Log</button>
+      <button class="icon-btn" data-remove="${e.id}" aria-label="Remove ${e.name}">×</button></li>`;
+    })
     .join("");
   refresh();
 }
@@ -209,6 +215,11 @@ $("#search-results").addEventListener("click", (e) => {
 });
 
 $("#exercise-list").addEventListener("click", (e) => {
+  const logId = e.target.closest("[data-log]")?.dataset.log;
+  if (logId) {
+    logDialog.open(exerciseById.get(logId));
+    return;
+  }
   const removeId = e.target.closest("[data-remove]")?.dataset.remove;
   if (removeId) {
     state.mine = state.mine.filter((id) => id !== removeId);
@@ -322,6 +333,13 @@ function readHash() {
   }
 }
 
+// ---------- training log dialog
+
+const logDialog = new LogDialog($("#log-dialog"), {
+  getLog: () => trainingLog.doc,
+  saveLog: (doc) => trainingLog.update(doc),
+});
+
 // ---------- sync settings dialog
 
 const dialog = $("#sync-dialog");
@@ -353,9 +371,8 @@ dialog.querySelector("form").addEventListener("submit", async (e) => {
     writeLocal(SYNC_KEY, cfg);
     dialog.close();
   } catch (err) {
-    store = null;
+    disconnectGitHub();
     $("#sync-error").textContent = err.message;
-    setSyncStatus("This device only — tap to sync");
   } finally {
     submit.disabled = false;
   }
@@ -363,25 +380,26 @@ dialog.querySelector("form").addEventListener("submit", async (e) => {
 
 $("#sync-disconnect").addEventListener("click", () => {
   writeLocal(SYNC_KEY, undefined);
-  writeLocal(DIRTY_KEY, undefined);
   writeLocal(HEALTH_CACHE_KEY, undefined); // health data stays only on connected devices
-  store = null;
-  setSyncStatus("This device only — tap to sync");
+  disconnectGitHub();
   dialog.close();
 });
 
 // ---------- boot
 
-state.mine = loadMyExercises();
+state.mine = profile.doc.myExercises;
 readHash();
 renderMyExercises();
 const cachedHealth = readLocal(HEALTH_CACHE_KEY, null);
 if (cachedHealth) health.setData(cachedHealth);
 const syncCfg = readLocal(SYNC_KEY, null);
 if (syncCfg) {
-  connectGitHub(syncCfg).catch((err) => setSyncStatus(`Not synced: ${err.message}`, "error"));
+  connectGitHub(syncCfg).catch((err) => {
+    $("#sync-status").textContent = `Not synced: ${err.message}`;
+    $("#sync-status").dataset.kind = "error";
+  });
 } else {
-  setSyncStatus("This device only — tap to sync");
+  renderSyncStatus();
   if (!cachedHealth) health.setMessage("Connect GitHub sync (⚙) to load your health data.");
 }
 viewer

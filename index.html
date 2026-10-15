@@ -103,6 +103,27 @@
     <section id="health-cards" class="cards"></section>
   </main>
 
+  <dialog id="log-dialog" class="log-dialog">
+    <form>
+      <h2 id="log-title"></h2>
+      <p id="log-summary" class="hint"></p>
+      <div id="log-chart" class="log-chart"></div>
+      <ul id="log-history" class="log-history"></ul>
+
+      <h3>New session</h3>
+      <label class="date-label">Date<input name="date" type="date" required></label>
+      <div id="log-sets"></div>
+      <button type="button" id="log-add-set" class="ghost small">+ Add set</button>
+      <p class="hint">Weight: the load in kg. For bodyweight exercises, only extra weight (vest, belt); otherwise leave empty.</p>
+      <p id="log-error" class="sync-error" role="status"></p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" id="log-cancel" class="ghost">Cancel</button>
+        <button type="submit" class="primary-btn">Save session</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="sync-dialog">
     <form>
       <h2>Sync with GitHub</h2>
