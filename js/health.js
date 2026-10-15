@@ -1,5 +1,6 @@
 // Health dashboard: WHOOP history (health/whoop.json in the private data repo).
 import { lineChart, stackedColumns, hBars, dataTable, linearTrend } from "./charts.js";
+import { checkinQuestions } from "./checkin.js";
 
 const DAY = 86400000;
 const RANGES = { 30: 30, 90: 90, 365: 365, all: Infinity };
@@ -38,6 +39,12 @@ export class HealthView {
     this.render();
   }
 
+  /** Daily check-ins (journal.json days); their answers join the journal-vs-recovery analysis. */
+  setCheckins(days) {
+    this.checkins = days ?? {};
+    this.render();
+  }
+
   setMessage(text) {
     const el = this.root.querySelector("#health-empty");
     el.textContent = text;
@@ -46,7 +53,11 @@ export class HealthView {
 
   /** Days in the selected range, plus the equally long period before it (for deltas). */
   slice() {
-    const days = this.doc.days.map((d) => ({ ...d, t: tUTC(d.date) }));
+    const days = this.doc.days.map((d) => ({
+      ...d,
+      t: tUTC(d.date),
+      journal: { ...d.journal, ...checkinQuestions(this.checkins?.[d.date]) },
+    }));
     const end = days.at(-1).t;
     const n = RANGES[this.range];
     const start = n === Infinity ? days[0].t : end - (n - 1) * DAY;

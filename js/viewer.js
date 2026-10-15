@@ -4,7 +4,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { groupForMuscle } from "./data/muscle-groups.js";
 
-const DRACO_PATH = "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/gltf/";
+const DRACO_PATH = new URL("../vendor/three/examples/jsm/libs/draco/gltf/", import.meta.url).href;
 
 const COLORS = {
   base: 0xc4b5ad,
@@ -152,6 +152,24 @@ export class MuscleViewer {
     this.requestRender();
   }
 
+  /**
+   * Color muscle groups individually (Map groupId -> css hex), e.g. a weekly-volume heatmap.
+   * Overrides the primary/secondary highlight while set; pass null to go back.
+   */
+  setGroupColors(colors) {
+    this.groupColors = colors;
+    this.applyMaterials();
+  }
+
+  colorMaterial(hex) {
+    if (!hex) return null;
+    this.colorMaterials ??= new Map();
+    if (!this.colorMaterials.has(hex)) {
+      this.colorMaterials.set(hex, new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.65, metalness: 0 }));
+    }
+    return this.colorMaterials.get(hex);
+  }
+
   applyMaterials() {
     const { base, secondary } = this.materials;
     // x-ray: unhighlighted muscles almost invisible, secondary ones see-through so primary ones stay visible
@@ -165,6 +183,7 @@ export class MuscleViewer {
     for (const m of this.muscleMeshes) {
       const g = m.userData.group;
       if (m === this.selected) m.material = this.materials.selected;
+      else if (this.groupColors) m.material = (g && this.colorMaterial(this.groupColors.get(g))) || base;
       else if (g && this.highlight.primary.has(g)) m.material = this.materials.primary;
       else if (g && this.highlight.secondary.has(g)) m.material = this.materials.secondary;
       else m.material = base;

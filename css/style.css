@@ -16,6 +16,10 @@
   --series-3: #1baf7a;
   --grid: #e1e0d9;
   --trend: #52514e;
+  --vol-1: #5598e7;
+  --vol-2: #2a78d6;
+  --vol-3: #1c5cab;
+  --vol-4: #0d366b;
   --axis-ink: #898781;
   --good-text: #006300;
   --bad-text: #d03b3b;
@@ -37,6 +41,10 @@
     --series-3: #199e70;
     --grid: #2c3038;
     --trend: #c3c2b7;
+    --vol-1: #256abf;
+    --vol-2: #3987e5;
+    --vol-3: #86b6ef;
+    --vol-4: #cde2fb;
     --axis-ink: #898781;
     --good-text: #0ca30c;
     --bad-text: #e66767;
@@ -44,6 +52,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0;
@@ -313,6 +322,23 @@ dialog input {
 .set-row input { width: 100%; min-width: 0; }
 .set-no { font-size: 13px; color: var(--muted); padding-bottom: 9px; }
 #log-add-set { margin-top: 10px; }
+
+.legend .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+.legend .legend-title { color: var(--text); font-weight: 500; }
+
+.checkin-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.checkin-nav strong { font-size: 15px; }
+.checkin-nav .icon-btn:disabled { opacity: 0.35; cursor: default; }
+.checkin-q { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.checkin-q > span, .checkin-q > label { display: flex; flex-direction: column; font-size: 14px; }
+.checkin-q small { color: var(--muted); font-size: 11px; }
+.seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex: none; }
+.seg button { border: 0; background: var(--panel); padding: 6px 11px; min-width: 36px; font-size: 13px; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+#checkin-weight { width: 90px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; text-align: right; }
+.checkin-h { margin: 18px 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.checkin-chart h4 { margin: 10px 0 2px; font-size: 13px; font-weight: 500; }
 
 .credits { padding: 10px 16px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
 .credits a { color: inherit; }

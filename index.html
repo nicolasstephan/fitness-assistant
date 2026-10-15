@@ -9,8 +9,8 @@
   <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        "three": "./vendor/three/build/three.module.js",
+        "three/addons/": "./vendor/three/examples/jsm/"
       }
     }
   </script>
@@ -34,12 +34,15 @@
         <span class="sep"></span>
         <button id="toggle-xray" aria-pressed="false">X-ray</button>
         <button id="toggle-skeleton" aria-pressed="true">Skeleton</button>
+        <span class="sep"></span>
+        <button id="toggle-volume" aria-pressed="false" title="Hard sets per muscle group, last 7 days">Volume</button>
       </div>
 
-      <div class="legend">
+      <div class="legend" id="legend-highlight">
         <span><i class="dot primary"></i>Primary</span>
         <span><i class="dot secondary"></i>Secondary</span>
       </div>
+      <div class="legend" id="legend-volume" hidden></div>
 
       <div class="info" id="info" hidden></div>
     </section>
@@ -57,6 +60,7 @@
         <div class="tabs" role="tablist">
           <button role="tab" data-tab="exercises" aria-selected="true">My exercises</button>
           <button role="tab" data-tab="muscles" aria-selected="false">Muscles</button>
+          <button role="tab" data-tab="today" aria-selected="false">Today</button>
         </div>
       </header>
 
@@ -75,6 +79,46 @@
       <div class="tab-body" data-tab-body="muscles" hidden>
         <p class="hint">Tap a muscle group, or tap a muscle on the model.</p>
         <div id="group-list"></div>
+      </div>
+
+      <div class="tab-body checkin" data-tab-body="today" id="checkin" hidden>
+        <div class="checkin-nav">
+          <button id="checkin-prev" class="icon-btn" aria-label="Previous day">‹</button>
+          <strong id="checkin-date"></strong>
+          <button id="checkin-next" class="icon-btn" aria-label="Next day">›</button>
+        </div>
+        <p class="hint">Saved as you tap. Tap a selected answer again to clear it.</p>
+
+        <div class="checkin-q">
+          <span>Alcohol</span>
+          <div class="seg"><button data-field="alcohol" data-value="false">No</button><button data-field="alcohol" data-value="true">Yes</button></div>
+        </div>
+        <div class="checkin-q">
+          <span>Caffeine after 2 pm</span>
+          <div class="seg"><button data-field="lateCaffeine" data-value="false">No</button><button data-field="lateCaffeine" data-value="true">Yes</button></div>
+        </div>
+        <div class="checkin-q">
+          <span>Stress <small>1 calm · 5 very stressed</small></span>
+          <div class="seg">
+            <button data-field="stress" data-value="1">1</button><button data-field="stress" data-value="2">2</button><button data-field="stress" data-value="3">3</button><button data-field="stress" data-value="4">4</button><button data-field="stress" data-value="5">5</button>
+          </div>
+        </div>
+        <div class="checkin-q">
+          <span>Perceived fitness <small id="fitness-anchor">How well and active do you feel?</small></span>
+          <div class="seg">
+            <button data-field="fitness" data-value="1" title="Brain fog, exhausted">1</button><button data-field="fitness" data-value="2" title="Tired, sluggish">2</button><button data-field="fitness" data-value="3" title="Normal">3</button><button data-field="fitness" data-value="4" title="Good, active">4</button><button data-field="fitness" data-value="5" title="Sharp, motivated">5</button>
+          </div>
+        </div>
+        <div class="checkin-q">
+          <label for="checkin-weight">Body weight <small>kg, morning</small></label>
+          <input id="checkin-weight" type="number" inputmode="decimal" step="0.1" min="20" max="400" placeholder="–">
+        </div>
+
+        <h3 class="checkin-h">Last 30 days</h3>
+        <p id="checkin-alcohol-summary" class="hint"></p>
+        <div class="checkin-chart" hidden><h4>Body weight</h4><div id="checkin-weight-chart"></div></div>
+        <div class="checkin-chart" hidden><h4>Stress</h4><div id="checkin-stress-chart"></div></div>
+        <div class="checkin-chart" hidden><h4>Perceived fitness</h4><div id="checkin-fitness-chart"></div></div>
       </div>
 
       <footer class="credits">

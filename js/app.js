@@ -5,6 +5,8 @@ import { GitHubStore } from "./github-store.js";
 import { HealthView } from "./health.js";
 import { SyncedDoc, readLocal, writeLocal } from "./synced-doc.js";
 import { LogDialog, normalizeLog, mergeLogs, lastSessionText } from "./training-log.js";
+import { CheckinView, normalizeJournal, mergeJournals, localToday } from "./checkin.js";
+import { weeklySets, volumeColors, VOLUME_BINS, VOLUME_TARGET } from "./volume.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -14,6 +16,7 @@ const state = {
   mine: [], // ids of the user's exercises, in the order added
   exercises: new Set(), // selected (highlighted) exercise ids
   group: null, // selected muscle group id (muscles tab)
+  volume: false, // weekly-volume heatmap on the model
 };
 
 // ---------- highlighting
@@ -34,7 +37,8 @@ function refresh() {
 
   document.querySelectorAll("#exercise-list li").forEach((li) => li.classList.toggle("active", state.exercises.has(li.dataset.id)));
   document.querySelectorAll("#group-list .chip").forEach((c) => c.classList.toggle("active", c.dataset.id === state.group));
-  showSummary(primary, secondary);
+  if (state.volume) showVolume();
+  else showSummary(primary, secondary);
 }
 
 function showSummary(primary, secondary) {
@@ -80,6 +84,16 @@ const trainingLog = new SyncedDoc({
   merge: mergeLogs,
 });
 
+const journal = new SyncedDoc({
+  key: "fa.journal",
+  dirtyKey: "fa.journal.unsynced",
+  path: "journal.json",
+  message: "Update daily check-in",
+  normalize: normalizeJournal,
+  merge: mergeJournals,
+});
+const syncedDocs = [profile, trainingLog, journal];
+
 let syncRepo = null; // repo name while connected
 const syncState = new Map(); // doc -> { state, message }
 
@@ -104,7 +118,7 @@ function renderSyncStatus() {
   }
 }
 
-for (const doc of [profile, trainingLog]) {
+for (const doc of syncedDocs) {
   doc.onStatus = (state, message) => {
     syncState.set(doc, { state, message });
     renderSyncStatus();
@@ -116,7 +130,14 @@ profile.onChange = (doc) => {
   readHash(); // the URL may select exercises that only the synced list contains
   renderMyExercises();
 };
-trainingLog.onChange = () => renderMyExercises();
+trainingLog.onChange = () => {
+  renderMyExercises();
+  if (state.volume) showVolume();
+};
+journal.onChange = (doc) => {
+  checkin.render();
+  health.setCheckins(doc.days);
+};
 
 const saveMyExercises = () => profile.update({ version: 1, myExercises: state.mine });
 
@@ -125,13 +146,12 @@ async function connectGitHub(cfg, { merge = false } = {}) {
   syncRepo = cfg.repo;
   syncState.clear();
   $("#sync-status").textContent = "Loading from GitHub…";
-  await Promise.all([profile.connect(cfg, { merge }), trainingLog.connect(cfg, { merge })]);
+  await Promise.all(syncedDocs.map((doc) => doc.connect(cfg, { merge })));
   loadHealth(cfg);
 }
 
 function disconnectGitHub() {
-  profile.disconnect();
-  trainingLog.disconnect();
+  syncedDocs.forEach((doc) => doc.disconnect());
   syncRepo = null;
   renderSyncStatus();
 }
@@ -231,6 +251,7 @@ $("#exercise-list").addEventListener("click", (e) => {
   const li = e.target.closest("li");
   if (!li) return;
   const id = li.dataset.id;
+  setVolume(false);
   state.exercises.has(id) ? state.exercises.delete(id) : state.exercises.add(id);
   state.group = null;
   viewer.setSelected(null);
@@ -260,6 +281,7 @@ $("#group-list").innerHTML = REGIONS.map((r) => `
 $("#group-list").addEventListener("click", (e) => {
   const chip = e.target.closest(".chip");
   if (!chip) return;
+  setVolume(false);
   state.group = state.group === chip.dataset.id ? null : chip.dataset.id;
   viewer.setSelected(null);
   refresh();
@@ -271,6 +293,7 @@ document.querySelectorAll("[role=tab]").forEach((tab) =>
   tab.addEventListener("click", () => {
     document.querySelectorAll("[role=tab]").forEach((t) => t.setAttribute("aria-selected", t === tab));
     document.querySelectorAll("[data-tab-body]").forEach((b) => (b.hidden = b.dataset.tabBody !== tab.dataset.tab));
+    if (tab.dataset.tab === "today") checkin.render();
   }),
 );
 
@@ -290,6 +313,71 @@ toggle($("#toggle-xray"), (on) => {
   writeHash();
 });
 toggle($("#toggle-skeleton"), (on) => viewer.setSkeletonVisible(on));
+$("#toggle-volume").addEventListener("click", () => setVolume(!state.volume));
+
+// ---------- weekly volume: muscles colored by hard sets in the last 7 days
+
+function setVolume(on) {
+  if (state.volume === on) return;
+  state.volume = on;
+  $("#toggle-volume").setAttribute("aria-pressed", on);
+  $("#legend-highlight").hidden = on;
+  $("#legend-volume").hidden = !on;
+  if (on) showVolume();
+  else {
+    viewer.setGroupColors(null);
+    refresh();
+  }
+  writeHash();
+}
+
+function showVolume() {
+  const sets = weeklySets(trainingLog.doc, exerciseById, localToday());
+  viewer.setSelected(null);
+  viewer.setGroupColors(volumeColors(sets));
+
+  const legend = $("#legend-volume");
+  legend.replaceChildren();
+  const title = document.createElement("span");
+  title.className = "legend-title";
+  title.textContent = "Sets, last 7 days";
+  legend.appendChild(title);
+  for (const bin of VOLUME_BINS) {
+    const item = document.createElement("span");
+    const sw = document.createElement("i");
+    sw.className = "swatch";
+    sw.style.background = `var(${bin.token})`;
+    item.append(sw, document.createTextNode(bin.label));
+    legend.appendChild(item);
+  }
+
+  // summary: trained groups, and groups your exercises target that are below 10 sets
+  const fmt = (n) => (Number.isInteger(n) ? `${n}` : n.toFixed(1));
+  const trained = [...sets].filter(([, n]) => n >= 0.5).sort((a, b) => b[1] - a[1]);
+  const targeted = new Set(state.mine.flatMap((id) => exerciseById.get(id).primary));
+  const below = [...targeted].filter((g) => (sets.get(g) ?? 0) < VOLUME_TARGET[0]);
+  const info = $("#info");
+  info.replaceChildren();
+  const head = document.createElement("strong");
+  head.textContent = trained.length ? "Hard sets, last 7 days" : "No sets logged in the last 7 days";
+  info.appendChild(head);
+  if (trained.length) {
+    const line = document.createElement("div");
+    line.textContent = trained.map(([g, n]) => `${groupById.get(g)?.label ?? g} ${fmt(n)}`).join(" · ");
+    info.appendChild(line);
+  }
+  if (below.length) {
+    const line = document.createElement("div");
+    line.className = "muted";
+    line.textContent = `Below ${VOLUME_TARGET[0]} sets: ${below.map((g) => groupById.get(g)?.label ?? g).join(", ")}`;
+    info.appendChild(line);
+  }
+  const note = document.createElement("div");
+  note.className = "muted";
+  note.textContent = "Secondary muscles count half a set. Target: 10–20 sets per muscle group per week.";
+  info.appendChild(note);
+  info.hidden = false;
+}
 
 // ---------- picking a muscle on the model
 
@@ -314,6 +402,7 @@ function writeHash() {
   if (state.group) params.set("group", state.group);
   else if (state.exercises.size) params.set("ex", [...state.exercises].join(","));
   if (viewer.xray) params.set("xray", "1");
+  if (state.volume) params.set("volume", "1");
   if (document.body.dataset.view === "health") params.set("view", "health");
   const hash = params.toString().replaceAll("%2C", ",");
   history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
@@ -338,6 +427,13 @@ function readHash() {
 const logDialog = new LogDialog($("#log-dialog"), {
   getLog: () => trainingLog.doc,
   saveLog: (doc) => trainingLog.update(doc),
+});
+
+// ---------- daily check-in
+
+const checkin = new CheckinView($("#checkin"), {
+  getJournal: () => journal.doc,
+  saveJournal: (doc) => journal.update(doc),
 });
 
 // ---------- sync settings dialog
@@ -387,9 +483,12 @@ $("#sync-disconnect").addEventListener("click", () => {
 
 // ---------- boot
 
+const startVolume = new URLSearchParams(location.hash.slice(1)).get("volume") === "1"; // read before the hash is rewritten
 state.mine = profile.doc.myExercises;
 readHash();
 renderMyExercises();
+health.setCheckins(journal.doc.days);
+if (startVolume) setVolume(true);
 const cachedHealth = readLocal(HEALTH_CACHE_KEY, null);
 if (cachedHealth) health.setData(cachedHealth);
 const syncCfg = readLocal(SYNC_KEY, null);
