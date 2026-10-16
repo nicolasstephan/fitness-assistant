@@ -375,6 +375,31 @@ dialog select { padding: 8px 6px; border: 1px solid var(--border); border-radius
   .supp-row label:first-child { grid-column: 1 / -1; }
 }
 
+.workout-plans { margin-bottom: 12px; }
+.workout-plans-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.workout-plans-head h3, .workout-history h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.workout-plans-head span { display: flex; gap: 6px; }
+.workout-plans .list li { cursor: default; }
+.workout-history h3 { margin: 18px 0 4px; }
+.plan-checklist { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.plan-exercise { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.plan-exercise-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.plan-exercise-head small { color: var(--muted); font-size: 12px; }
+.plan-set { display: grid; grid-template-columns: 48px 1fr 1fr 40px; gap: 8px; align-items: center; padding: 3px 0; font-size: 13px; color: var(--muted); }
+.plan-set input { width: 58px; padding: 5px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+.plan-set.done input { border-color: transparent; background: transparent; color: var(--text); font-weight: 600; }
+.tick-btn { width: 36px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); font-size: 16px; }
+.tick-btn[aria-pressed="true"] { background: #2f9e44; border-color: #2f9e44; color: #fff; }
+.plan-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+.plan-row { display: grid; grid-template-columns: 2.4fr 0.8fr 0.8fr 0.9fr 32px; gap: 8px; align-items: end; margin-top: 8px; }
+.plan-row label { margin-top: 0; }
+.plan-row input, .plan-row select { width: 100%; min-width: 0; }
+#plan-add { margin-top: 10px; }
+@media (max-width: 520px) {
+  .plan-row { grid-template-columns: 1fr 1fr 1fr 32px; }
+  .plan-row label:first-child { grid-column: 1 / -1; }
+}
+
 .credits { padding: 10px 16px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
 .credits a { color: inherit; }
 

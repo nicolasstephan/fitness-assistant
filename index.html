@@ -65,7 +65,18 @@
       </header>
 
       <div class="tab-body" data-tab-body="exercises" id="exercises-tab">
-        <div id="workout-bar" class="workout-bar"></div>
+        <div id="workout-bar" class="workout-bar running" hidden></div>
+        <section id="workout-plans" class="workout-plans">
+          <div class="workout-plans-head">
+            <h3>Workouts</h3>
+            <span>
+              <button type="button" class="ghost small" data-edit-plan="">+ New plan</button>
+              <button type="button" class="ghost small" data-start-plan="">▶ Free workout</button>
+            </span>
+          </div>
+          <p id="plans-hint" class="hint">Compose a workout from exercises and sets, then start it to tick off sets with a timer running.</p>
+          <ul class="list"></ul>
+        </section>
         <div class="search-row">
           <input id="exercise-search" type="search" placeholder="Search to add exercises…" autocomplete="off">
           <button id="clear-selection" class="ghost">Clear</button>
@@ -76,7 +87,7 @@
           <ul id="exercise-list" class="list"></ul>
         </div>
         <section id="workout-history" class="workout-history" hidden>
-          <h3>Workouts</h3>
+          <h3>Workout history</h3>
           <ul class="list"></ul>
         </section>
       </div>
@@ -198,6 +209,23 @@
         <span class="spacer"></span>
         <button type="button" id="supp-cancel" class="ghost">Cancel</button>
         <button type="submit" class="primary-btn">Save protocol</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="plan-dialog" class="plan-dialog">
+    <form>
+      <h2 id="plan-title">New workout plan</h2>
+      <label>Name<input name="plan-name" maxlength="60" placeholder="e.g. Push day" required autocomplete="off"></label>
+      <div id="plan-rows"></div>
+      <button type="button" id="plan-add" class="ghost small">+ Add exercise</button>
+      <p class="hint">kg: the load, or extra weight for bodyweight exercises; leave empty for none. You can adjust each set while training.</p>
+      <p id="plan-error" class="sync-error" role="status"></p>
+      <div class="dialog-actions">
+        <button type="button" id="plan-delete" class="ghost danger">Delete plan</button>
+        <span class="spacer"></span>
+        <button type="button" id="plan-cancel" class="ghost">Cancel</button>
+        <button type="submit" class="primary-btn">Save plan</button>
       </div>
     </form>
   </dialog>

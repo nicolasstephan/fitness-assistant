@@ -6,7 +6,7 @@ import { HealthView } from "./health.js";
 import { SyncedDoc, readLocal, writeLocal } from "./synced-doc.js";
 import { LogDialog, normalizeLog, mergeLogs, lastSessionText } from "./training-log.js";
 import { CheckinView, normalizeJournal, mergeJournals, localToday } from "./checkin.js";
-import { weeklySets, volumeColors, VOLUME_BINS, VOLUME_TARGET } from "./volume.js";
+import { weeklySets, volumeColors, workoutMuscles, VOLUME_BINS, VOLUME_TARGET } from "./volume.js";
 import { WorkoutView } from "./workouts.js";
 import { SupplementDialog } from "./supplements.js";
 
@@ -19,6 +19,7 @@ const state = {
   exercises: new Set(), // selected (highlighted) exercise ids
   group: null, // selected muscle group id (muscles tab)
   volume: false, // weekly-volume heatmap on the model
+  workoutFocus: null, // workout id whose trained muscles are shown on the model
 };
 
 // ---------- highlighting
@@ -26,7 +27,11 @@ const state = {
 function refresh() {
   const primary = new Set();
   const secondary = new Set();
-  if (state.group) {
+  const focus = state.workoutFocus && workoutMuscles(trainingLog.doc, state.workoutFocus, exerciseById);
+  if (focus) {
+    focus.primary.forEach((g) => primary.add(g));
+    focus.secondary.forEach((g) => secondary.add(g));
+  } else if (state.group) {
     primary.add(state.group);
   } else {
     for (const ex of EXERCISES.filter((e) => state.exercises.has(e.id))) {
@@ -40,7 +45,39 @@ function refresh() {
   document.querySelectorAll("#exercise-list li").forEach((li) => li.classList.toggle("active", state.exercises.has(li.dataset.id)));
   document.querySelectorAll("#group-list .chip").forEach((c) => c.classList.toggle("active", c.dataset.id === state.group));
   if (state.volume) showVolume();
+  else if (focus) showWorkoutSummary(focus);
   else showSummary(primary, secondary);
+}
+
+/** Show which muscles a workout trained: highlight on the model + sets per muscle group. */
+function showWorkoutMuscles(workoutId) {
+  setVolume(false);
+  state.exercises.clear();
+  state.group = null;
+  state.workoutFocus = workoutId;
+  viewer.setSelected(null);
+  refresh();
+}
+
+function showWorkoutSummary(focus) {
+  const w = trainingLog.doc.workouts.find((x) => x.id === state.workoutFocus);
+  const info = $("#info");
+  info.replaceChildren();
+  const head = document.createElement("strong");
+  const minutes = w?.end ? Math.round((Date.parse(`${w.end}:00Z`) - Date.parse(`${w.start}:00Z`)) / 60000) : null;
+  head.textContent = `${w?.name ?? "Workout"}${minutes != null ? ` · ${minutes} min` : " · running"} · ${focus.totalSets} sets`;
+  info.appendChild(head);
+  const fmt = (n) => (Number.isInteger(n) ? `${n}` : n.toFixed(1));
+  const line = document.createElement("div");
+  line.textContent = focus.sets.size
+    ? [...focus.sets].sort((a, b) => b[1] - a[1]).map(([g, n]) => `${groupById.get(g)?.label ?? g} ${fmt(n)}`).join(" · ")
+    : "No sets logged yet.";
+  info.appendChild(line);
+  const note = document.createElement("div");
+  note.className = "muted";
+  note.textContent = "Red: main muscles · orange: assisting (half a set). Tap an exercise or Clear to go back.";
+  info.appendChild(note);
+  info.hidden = false;
 }
 
 function showSummary(primary, secondary) {
@@ -256,6 +293,7 @@ $("#exercise-list").addEventListener("click", (e) => {
   if (!li) return;
   const id = li.dataset.id;
   setVolume(false);
+  state.workoutFocus = null;
   state.exercises.has(id) ? state.exercises.delete(id) : state.exercises.add(id);
   state.group = null;
   viewer.setSelected(null);
@@ -269,6 +307,7 @@ $("#exercise-search").addEventListener("keydown", (e) => {
   renderSearch();
 });
 $("#clear-selection").addEventListener("click", () => {
+  state.workoutFocus = null;
   state.exercises.clear();
   state.group = null;
   viewer.setSelected(null);
@@ -286,6 +325,7 @@ $("#group-list").addEventListener("click", (e) => {
   const chip = e.target.closest(".chip");
   if (!chip) return;
   setVolume(false);
+  state.workoutFocus = null;
   state.group = state.group === chip.dataset.id ? null : chip.dataset.id;
   viewer.setSelected(null);
   refresh();
@@ -435,11 +475,13 @@ const logDialog = new LogDialog($("#log-dialog"), {
 
 // ---------- timed workouts
 
-const workoutView = new WorkoutView($("#exercises-tab"), {
+const workoutView = new WorkoutView($("#exercises-tab"), $("#plan-dialog"), {
   getLog: () => trainingLog.doc,
   saveLog: (doc) => trainingLog.update(doc),
   exerciseById,
+  getMine: () => state.mine,
   getTracker: () => (health.doc ? { source: "WHOOP", workouts: health.doc.workouts } : null),
+  onShowMuscles: showWorkoutMuscles,
 });
 
 // ---------- daily check-in

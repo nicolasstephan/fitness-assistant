@@ -1,6 +1,8 @@
 // Strength training log, stored as training-log.json in the private data repo:
-//   workouts: [{ id, start, end }]   timed workouts ("YYYY-MM-DDTHH:MM" local time; end null while running)
-//   sessions: [{ id, date, exercise, sets: [{ reps, kg }], workoutId?, time? }]   one per exercise
+//   plans:    [{ id, name, items: [{ exercise, sets, reps, kg }] }]   workout templates
+//   workouts: [{ id, start, end, planId?, name? }]   timed workouts ("YYYY-MM-DDTHH:MM" local time; end null while running)
+//   sessions: [{ id, date, exercise, sets: [{ reps, kg, i? }], workoutId?, time? }]   one per exercise
+//             (i = index of the planned set it ticks off)
 import { lineChart } from "./charts.js";
 
 const DAY = 86400000;
@@ -14,7 +16,7 @@ const LOCAL_TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 function normalizeSession(s) {
   if (!s || typeof s.exercise !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s.date ?? "")) return null;
   const sets = (Array.isArray(s.sets) ? s.sets : [])
-    .map((x) => ({ reps: Math.round(num(x?.reps)), kg: num(x?.kg) }))
+    .map((x) => ({ reps: Math.round(num(x?.reps)), kg: num(x?.kg), ...(Number.isInteger(x?.i) && x.i >= 0 ? { i: x.i } : {}) }))
     .filter((x) => x.reps > 0);
   if (!sets.length) return null;
   const out = { id: String(s.id ?? `${s.date}-${Math.random().toString(36).slice(2)}`), date: s.date, exercise: s.exercise, sets };
@@ -25,7 +27,24 @@ function normalizeSession(s) {
 
 function normalizeWorkout(w) {
   if (!w || typeof w.id !== "string" || !LOCAL_TIME_RE.test(w.start ?? "")) return null;
-  return { id: w.id, start: w.start, end: LOCAL_TIME_RE.test(w.end ?? "") && w.end >= w.start ? w.end : null };
+  const out = { id: w.id, start: w.start, end: LOCAL_TIME_RE.test(w.end ?? "") && w.end >= w.start ? w.end : null };
+  if (typeof w.planId === "string") out.planId = w.planId;
+  if (typeof w.name === "string" && w.name.trim()) out.name = w.name.trim().slice(0, 60);
+  return out;
+}
+
+function normalizePlan(p) {
+  if (!p || typeof p.id !== "string") return null;
+  const items = (Array.isArray(p.items) ? p.items : [])
+    .filter((x) => typeof x?.exercise === "string")
+    .map((x) => ({
+      exercise: x.exercise,
+      sets: Math.min(20, Math.max(1, Math.round(num(x.sets)) || 1)),
+      reps: Math.max(1, Math.round(num(x.reps)) || 1),
+      kg: num(x.kg),
+    }));
+  const name = typeof p.name === "string" && p.name.trim() ? p.name.trim().slice(0, 60) : "Workout";
+  return { id: p.id, name, items };
 }
 
 export function normalizeLog(raw) {
@@ -33,17 +52,22 @@ export function normalizeLog(raw) {
   sessions.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "").localeCompare(b.time ?? "") || a.id.localeCompare(b.id));
   const workouts = (Array.isArray(raw?.workouts) ? raw.workouts : []).map(normalizeWorkout).filter(Boolean);
   workouts.sort((a, b) => a.start.localeCompare(b.start));
-  return { version: 2, workouts, sessions };
+  const plans = (Array.isArray(raw?.plans) ? raw.plans : []).map(normalizePlan).filter(Boolean);
+  return { version: 2, plans, workouts, sessions };
 }
 
-/** Union by id (sessions and workouts); the local copy wins for the same id. */
+/** Union by id (plans, workouts, sessions); the local copy wins for the same id. */
 export function mergeLogs(remote, local) {
   const union = (a, b) => {
     const byId = new Map(a.map((x) => [x.id, x]));
     for (const x of b) byId.set(x.id, x);
     return [...byId.values()];
   };
-  return normalizeLog({ workouts: union(remote.workouts, local.workouts), sessions: union(remote.sessions, local.sessions) });
+  return normalizeLog({
+    plans: union(remote.plans, local.plans),
+    workouts: union(remote.workouts, local.workouts),
+    sessions: union(remote.sessions, local.sessions),
+  });
 }
 
 /** Local wall-clock time as "YYYY-MM-DDTHH:MM". */
