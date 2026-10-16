@@ -20,7 +20,7 @@ const el = (tag, props = {}, ...children) => {
   e.append(...children);
   return e;
 };
-const describePlanItem = (it) => `${it.sets} × ${it.reps}${it.kg ? ` @ ${it.kg} kg` : ""}`;
+const describePlanItem = (it) => describeSets(it.sets);
 
 /**
  * Tracker workout with the largest time overlap (15 min tolerance on both ends), or null.
@@ -141,7 +141,18 @@ export class WorkoutView {
     const rows = d.querySelector("#plan-rows");
     d.querySelector("#plan-add").addEventListener("click", () => this.addPlanRow({}));
     rows.addEventListener("click", (e) => {
-      if (e.target.closest("[data-remove-item]")) e.target.closest(".plan-row").remove();
+      const t = e.target;
+      if (t.closest("[data-remove-item]")) t.closest(".plan-row").remove();
+      else if (t.closest("[data-add-set]")) {
+        const list = t.closest(".plan-row").querySelector(".plan-set-rows");
+        const last = [...list.children].at(-1);
+        // a new set copies the previous one: only change what differs (e.g. less weight for a drop set)
+        this.addSetRow(list, last ? { reps: last.querySelector("[name=reps]").value, kg: last.querySelector("[name=kg]").value } : {});
+      } else if (t.closest("[data-remove-set]")) {
+        const list = t.closest(".plan-set-rows");
+        if (list.children.length > 1) t.closest(".plan-set-row").remove();
+        this.renumberSets(list);
+      }
     });
     d.querySelector("#plan-cancel").addEventListener("click", () => d.close());
     d.querySelector("#plan-delete").addEventListener("click", () => {
@@ -154,9 +165,7 @@ export class WorkoutView {
       e.preventDefault();
       const items = [...rows.querySelectorAll(".plan-row")].map((r) => ({
         exercise: r.querySelector("[name=exercise]").value,
-        sets: r.querySelector("[name=sets]").value,
-        reps: r.querySelector("[name=reps]").value,
-        kg: r.querySelector("[name=kg]").value,
+        sets: [...r.querySelectorAll(".plan-set-row")].map((s) => ({ reps: s.querySelector("[name=reps]").value, kg: s.querySelector("[name=kg]").value })),
       })).filter((x) => this.exerciseById.has(x.exercise));
       const error = d.querySelector("#plan-error");
       if (!items.length) {
@@ -178,26 +187,42 @@ export class WorkoutView {
     d.querySelector("#plan-delete").hidden = !this.editingPlan;
     d.querySelector("#plan-error").textContent = "";
     d.querySelector("#plan-rows").replaceChildren();
-    const items = this.editingPlan?.items ?? this.getMine().slice(0, 3).map((exercise) => ({ exercise, sets: 3, reps: 10, kg: 0 }));
+    const three = () => [0, 1, 2].map(() => ({ reps: 10, kg: 0 }));
+    const items = this.editingPlan?.items ?? this.getMine().slice(0, 3).map((exercise) => ({ exercise, sets: three() }));
     (items.length ? items : [{}]).forEach((it) => this.addPlanRow(it));
     d.showModal();
   }
 
-  addPlanRow({ exercise = this.getMine()[0] ?? "push_up", sets = 3, reps = 10, kg = 0 }) {
+  addPlanRow({ exercise = this.getMine()[0] ?? "push_up", sets = [0, 1, 2].map(() => ({ reps: 10, kg: 0 })) }) {
     const mine = this.getMine();
     const all = [...this.exerciseById.values()];
     const option = (ex) => el("option", { value: ex.id, selected: ex.id === exercise, textContent: ex.name });
     const select = el("select", { name: "exercise" },
       ...(mine.length ? [el("optgroup", { label: "My exercises" }, ...mine.map((id) => option(this.exerciseById.get(id))))] : []),
       el("optgroup", { label: "All exercises" }, ...all.filter((ex) => !mine.includes(ex.id)).map(option)));
-    const num = (name, value, attrs) => el("input", { name, type: "number", value: value || "", ...attrs });
+    const list = el("div", { className: "plan-set-rows" });
     const row = el("div", { className: "plan-row" },
-      el("label", {}, "Exercise", select),
-      el("label", {}, "Sets", num("sets", sets, { min: 1, max: 20, step: 1, inputMode: "numeric", required: true })),
-      el("label", {}, "Reps", num("reps", reps, { min: 1, step: 1, inputMode: "numeric", required: true })),
-      el("label", {}, "kg", num("kg", kg, { min: 0, step: 0.5, inputMode: "decimal", placeholder: "–" })),
-      el("button", { type: "button", className: "icon-btn", dataset: { removeItem: "" }, ariaLabel: "Remove exercise", textContent: "×" }));
+      el("div", { className: "plan-row-head" },
+        el("label", {}, "Exercise", select),
+        el("button", { type: "button", className: "icon-btn", dataset: { removeItem: "" }, ariaLabel: "Remove exercise", textContent: "×" })),
+      list,
+      el("button", { type: "button", className: "ghost small", dataset: { addSet: "" }, textContent: "+ Set" }));
+    sets.forEach((s) => this.addSetRow(list, s));
     this.planDialog.querySelector("#plan-rows").appendChild(row);
+  }
+
+  addSetRow(list, { reps = 10, kg = 0 }) {
+    const num = (name, value, attrs) => el("input", { name, type: "number", value: value || "", ...attrs });
+    list.appendChild(el("div", { className: "plan-set-row" },
+      el("span", { className: "set-no" }),
+      el("label", {}, num("reps", reps, { min: 1, step: 1, inputMode: "numeric", required: true, ariaLabel: "Reps" }), " reps"),
+      el("label", {}, num("kg", kg, { min: 0, step: 0.5, inputMode: "decimal", placeholder: "–", ariaLabel: "kg" }), " kg"),
+      el("button", { type: "button", className: "icon-btn", dataset: { removeSet: "" }, ariaLabel: "Remove set", textContent: "×" })));
+    this.renumberSets(list);
+  }
+
+  renumberSets(list) {
+    [...list.children].forEach((r, i) => (r.querySelector(".set-no").textContent = `Set ${i + 1}`));
   }
 
   // ---------- rendering
@@ -262,13 +287,14 @@ export class WorkoutView {
         const block = el("div", { className: "plan-exercise" },
           el("div", { className: "plan-exercise-head" },
             el("strong", { textContent: ex.name }),
-            el("small", { textContent: `${doneByIndex.size}/${item.sets} sets · plan ${describePlanItem(item)}` })));
-        for (let i = 0; i < item.sets; i++) {
+            el("small", { textContent: `${doneByIndex.size}/${item.sets.length} sets · plan ${describePlanItem(item)}` })));
+        for (let i = 0; i < item.sets.length; i++) {
+          const target = item.sets[i];
           const done = doneByIndex.get(i);
           block.appendChild(el("div", { className: `plan-set${done ? " done" : ""}`, dataset: { exercise: item.exercise, i: String(i) } },
             el("span", { className: "set-no", textContent: `Set ${i + 1}` }),
-            el("label", {}, el("input", { name: "reps", type: "number", min: 1, step: 1, inputMode: "numeric", value: String(done?.reps ?? item.reps) }), " reps"),
-            el("label", {}, el("input", { name: "kg", type: "number", min: 0, step: 0.5, inputMode: "decimal", placeholder: "–", value: done?.kg || item.kg || "" }), " kg"),
+            el("label", {}, el("input", { name: "reps", type: "number", min: 1, step: 1, inputMode: "numeric", value: String(done?.reps ?? target.reps) }), " reps"),
+            el("label", {}, el("input", { name: "kg", type: "number", min: 0, step: 0.5, inputMode: "decimal", placeholder: "–", value: done?.kg || target.kg || "" }), " kg"),
             el("button", { type: "button", className: "tick-btn", dataset: { tick: "" }, ariaPressed: String(!!done), ariaLabel: `Set ${i + 1} done`, textContent: "✓" })));
         }
         checklist.appendChild(block);

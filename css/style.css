@@ -391,14 +391,16 @@ dialog select { padding: 8px 6px; border: 1px solid var(--border); border-radius
 .tick-btn { width: 36px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); font-size: 16px; }
 .tick-btn[aria-pressed="true"] { background: #2f9e44; border-color: #2f9e44; color: #fff; }
 .plan-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
-.plan-row { display: grid; grid-template-columns: 2.4fr 0.8fr 0.8fr 0.9fr 32px; gap: 8px; align-items: end; margin-top: 8px; }
+.plan-row { margin-top: 10px; padding: 8px 10px 10px; border: 1px solid var(--border); border-radius: 10px; }
+.plan-row-head { display: grid; grid-template-columns: 1fr 32px; gap: 8px; align-items: end; }
 .plan-row label { margin-top: 0; }
-.plan-row input, .plan-row select { width: 100%; min-width: 0; }
+.plan-row select { width: 100%; min-width: 0; }
+.plan-set-row { display: grid; grid-template-columns: 48px 1fr 1fr 28px; gap: 8px; align-items: center; margin-top: 6px; font-size: 13px; color: var(--muted); }
+.plan-set-row label { flex-direction: row; align-items: center; gap: 6px; margin: 0; }
+.plan-set-row input { width: 70px; }
+.plan-set-row .icon-btn { width: 26px; height: 26px; font-size: 14px; }
+.plan-row [data-add-set] { margin-top: 8px; }
 #plan-add { margin-top: 10px; }
-@media (max-width: 520px) {
-  .plan-row { grid-template-columns: 1fr 1fr 1fr 32px; }
-  .plan-row label:first-child { grid-column: 1 / -1; }
-}
 
 .credits { padding: 10px 16px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
 .credits a { color: inherit; }

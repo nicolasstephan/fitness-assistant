@@ -1,5 +1,5 @@
 // Strength training log, stored as training-log.json in the private data repo:
-//   plans:    [{ id, name, items: [{ exercise, sets, reps, kg }] }]   workout templates
+//   plans:    [{ id, name, items: [{ exercise, sets: [{ reps, kg }] }] }]   workout templates, one target per set
 //   workouts: [{ id, start, end, planId?, name? }]   timed workouts ("YYYY-MM-DDTHH:MM" local time; end null while running)
 //   sessions: [{ id, date, exercise, sets: [{ reps, kg, i? }], workoutId?, time? }]   one per exercise
 //             (i = index of the planned set it ticks off)
@@ -35,14 +35,17 @@ function normalizeWorkout(w) {
 
 function normalizePlan(p) {
   if (!p || typeof p.id !== "string") return null;
+  const set = (x) => ({ reps: Math.max(1, Math.round(num(x?.reps)) || 1), kg: num(x?.kg) });
   const items = (Array.isArray(p.items) ? p.items : [])
     .filter((x) => typeof x?.exercise === "string")
     .map((x) => ({
       exercise: x.exercise,
-      sets: Math.min(20, Math.max(1, Math.round(num(x.sets)) || 1)),
-      reps: Math.max(1, Math.round(num(x.reps)) || 1),
-      kg: num(x.kg),
-    }));
+      // older plans stored "sets × reps @ kg"; expand them to identical sets
+      sets: (Array.isArray(x.sets)
+        ? x.sets.map(set)
+        : Array.from({ length: Math.max(1, Math.round(num(x.sets)) || 1) }, () => set(x))).slice(0, 20),
+    }))
+    .filter((x) => x.sets.length);
   const name = typeof p.name === "string" && p.name.trim() ? p.name.trim().slice(0, 60) : "Workout";
   return { id: p.id, name, items };
 }
