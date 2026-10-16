@@ -572,6 +572,10 @@ if (syncCfg) {
 }
 // after everything has loaded, make sure no file is a stale cached copy from before a deploy
 window.addEventListener("load", () => setTimeout(() => checkForUpdate().catch(() => {}), 1500));
+// phones keep the app open in the background for days: check again when it comes back
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") checkForUpdate().catch(() => {});
+});
 
 viewer
   .load("assets/models/muscles.glb", "assets/models/skeleton.glb", (p) => ($("#loading-fill").style.width = `${Math.round(p * 100)}%`))

@@ -14,8 +14,9 @@ function loadedFiles() {
 
 async function isStale(url) {
   try {
+    // force-cache returns the cached copy even when expired (only-if-cached is unsupported in Safari)
     const [cached, fresh] = await Promise.all([
-      fetch(url, { cache: "only-if-cached", mode: "same-origin" }),
+      fetch(url, { cache: "force-cache" }),
       fetch(url, { method: "HEAD", cache: "no-store" }),
     ]);
     const a = cached.headers.get("etag"), b = fresh.headers.get("etag");
