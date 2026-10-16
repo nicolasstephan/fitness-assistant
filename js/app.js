@@ -39,6 +39,8 @@ function refresh() {
       ex.secondary.forEach((g) => secondary.add(g));
     }
   }
+  // a muscle that is a main mover for any selected exercise is listed as primary only
+  for (const g of primary) secondary.delete(g);
   viewer.setHighlight([...primary], [...secondary]);
   writeHash();
 
