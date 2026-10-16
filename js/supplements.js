@@ -4,6 +4,10 @@
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export const UNITS = ["g", "mg", "µg", "IU", "ml", "capsule(s)", "tablet(s)"];
+// stored value -> shown text. IU = international unit, German "I.E." (Internationale Einheit), e.g. vitamin D3: 1 µg = 40 I.E.
+const UNIT_LABEL = { IU: "I.E." };
+const UNIT_OPTION = { IU: "I.E. (IU)" };
+const unitLabel = (u) => UNIT_LABEL[u] ?? u;
 export const TIMINGS = ["Morning", "Midday", "Evening", "Before bed", "With training", "Any time"];
 
 function normalizeItem(i) {
@@ -13,7 +17,7 @@ function normalizeItem(i) {
   return {
     name,
     dose,
-    unit: UNITS.includes(i.unit) ? i.unit : "g",
+    unit: UNITS.includes(i.unit) ? i.unit : i.unit === "I.E." ? "IU" : "g",
     timing: TIMINGS.includes(i.timing) ? i.timing : "Any time",
   };
 }
@@ -41,7 +45,7 @@ export function versionOn(supplements, date) {
   return supplements.versions.filter((v) => v.from <= date).at(-1) ?? null;
 }
 
-export const describeItem = (i) => `${i.name}${i.dose != null ? ` ${i.dose} ${i.unit}` : ""}`;
+export const describeItem = (i) => `${i.name}${i.dose != null ? ` ${i.dose} ${unitLabel(i.unit)}` : ""}`;
 
 const fmtDate = (date) => new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
 
@@ -96,10 +100,11 @@ export class SupplementDialog {
   addRow({ name = "", dose = null, unit = "g", timing = "Morning" }) {
     const row = document.createElement("div");
     row.className = "supp-row";
-    const opts = (list, sel) => list.map((x) => `<option${x === sel ? " selected" : ""}>${x}</option>`).join("");
+    const opts = (list, sel, labels = {}) =>
+      list.map((x) => `<option value="${x}"${x === sel ? " selected" : ""}>${labels[x] ?? x}</option>`).join("");
     row.innerHTML = `<label>Name<input name="name" maxlength="60" placeholder="e.g. Creatine" autocomplete="off"></label>
       <label>Dose<input name="dose" type="number" inputmode="decimal" min="0" step="any"></label>
-      <label>Unit<select name="unit">${opts(UNITS, unit)}</select></label>
+      <label>Unit<select name="unit">${opts(UNITS, unit, UNIT_OPTION)}</select></label>
       <label>When<select name="timing">${opts(TIMINGS, timing)}</select></label>
       <button type="button" class="icon-btn" data-remove-supp aria-label="Remove">×</button>`;
     row.querySelector("[name=name]").value = name;
