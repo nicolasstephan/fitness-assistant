@@ -476,6 +476,8 @@ body[data-view="health"] .layout { display: none; }
 .chart .line.overlay { stroke: var(--text); }
 .legend-row i.line-key.faint { opacity: 0.3; }
 .chart .trend { stroke: var(--trend); stroke-width: 1.5; stroke-linecap: round; }
+.chart .gap { fill: var(--chip); }
+.chart .gap-label { fill: var(--muted); font-size: 12px; }
 .chart .crosshair { stroke: var(--axis-ink); stroke-width: 1; }
 .chart .col.hover path { opacity: 0.8; }
 .chart-tip {

@@ -123,6 +123,18 @@ function frame(container, height) {
   return { svg, width, height, tip: tooltip(container) };
 }
 
+/** Shaded "No data" bands for gaps [{ t0, t1 }], clamped to the plot. Drawn behind the data. */
+function drawGaps(svg, gaps, x, width, height) {
+  for (const g of gaps ?? []) {
+    const x0 = Math.max(PAD.left, x(g.t0)), x1 = Math.min(width - PAD.right, x(g.t1));
+    if (x1 - x0 < 1) continue;
+    svgEl("rect", { x: x0, y: PAD.top, width: x1 - x0, height: height - PAD.top - PAD.bottom, class: "gap" }, svg);
+    if (x1 - x0 >= 56) {
+      svgEl("text", { x: (x0 + x1) / 2, y: PAD.top + (height - PAD.top - PAD.bottom) / 2, class: "gap-label", "text-anchor": "middle", "dominant-baseline": "middle" }, svg).textContent = "No data";
+    }
+  }
+}
+
 function noData(container) {
   container.replaceChildren();
   container.textContent = "No data in this period.";
@@ -156,6 +168,7 @@ export function lineChart(container, points, opts) {
   const fmt = opts.format ?? ((v) => `${Math.round(v)}`);
 
   yAxis(svg, ticks, y, PAD.left, width - PAD.right, opts.tickFormat ?? fmt);
+  drawGaps(svg, opts.gaps, x, width, height);
   const tt = timeTicks(t0, t1, width - PAD.left - PAD.right);
   for (const t of tt.ticks) {
     svgEl("text", { x: x(t), y: height - 6, class: "tick", "text-anchor": "middle" }, svg).textContent = tt.fmt(t);
@@ -237,6 +250,8 @@ export function stackedColumns(container, rows, series, opts) {
   yAxis(svg, ticks, y, PAD.left, width - PAD.right, fmt);
   const t0 = rows[0].t, t1 = rows.at(-1).t;
   const xCenter = (i) => PAD.left + band * (i + 0.5);
+  // gaps in time -> pixels across the column bands
+  drawGaps(svg, opts.gaps, (t) => PAD.left + band / 2 + ((t - t0) / (t1 - t0 || 1)) * (band * (rows.length - 1)), width, height);
   const tt = timeTicks(t0, t1, plotW);
   for (const t of tt.ticks) {
     const i = Math.round(((t - t0) / (t1 - t0 || 1)) * (rows.length - 1));

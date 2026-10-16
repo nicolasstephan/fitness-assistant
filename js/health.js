@@ -26,6 +26,26 @@ const emptyDay = (date) => ({
 });
 const hasData = (d) => d.recovery != null || d.strain != null || d.sleep.asleepMin != null;
 
+/** Runs of 3+ days without data, as [{ t0, t1 }] from the last day with data to the next one. */
+function gapsIn(days) {
+  const gaps = [];
+  let run = null;
+  for (const d of days) {
+    if (hasData(d)) {
+      if (run) close();
+    } else {
+      run ??= { first: d.t };
+      run.last = d.t;
+    }
+  }
+  if (run) close(true);
+  return gaps;
+  function close(atEnd) {
+    if ((run.last - run.first) / DAY >= 2) gaps.push({ t0: run.first - DAY, t1: atEnd ? run.last : run.last + DAY });
+    run = null;
+  }
+}
+
 const mean = (xs) => {
   const v = xs.filter((x) => x != null);
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
@@ -98,7 +118,7 @@ export class HealthView {
       const t = tUTC(w.start.slice(0, 10));
       return t >= prevStart && t < start;
     });
-    return { days, cur, prev, workouts, prevWorkouts, start, end };
+    return { days, cur, prev, workouts, prevWorkouts, start, end, gaps: gapsIn(cur) };
   }
 
   /**
@@ -190,6 +210,8 @@ export class HealthView {
   rolling(days, cur, get, window) {
     const byT = new Map(days.map((d) => [d.t, get(d)]));
     return cur.map((d) => {
+      if (byT.get(d.t) == null) return { t: d.t, v: null }; // no average drawn into a gap
+
       const vals = [];
       for (let k = 0; k < window; k++) {
         const v = byT.get(d.t - k * DAY);
@@ -199,7 +221,7 @@ export class HealthView {
     });
   }
 
-  renderCards({ days, cur, workouts, start, end }) {
+  renderCards({ days, cur, workouts, start, end, gaps }) {
     const cards = this.root.querySelector("#health-cards");
     cards.replaceChildren();
     // charts are sized from their container, so draw only once every card is in the grid
@@ -238,7 +260,7 @@ export class HealthView {
       const byT = new Map(smooth.map((p) => [p.t, p.v]));
       this.card(cards, title, sub,
         (el) => lineChart(el, b.points, {
-          color: blue, describe: b.describe, trend,
+          color: blue, describe: b.describe, trend, gaps,
           smooth: { points: smooth, label: smoothLabel }, baseLabel: b.weekly ? "weekly average" : "that day",
           ...opts,
         }),
@@ -276,7 +298,7 @@ export class HealthView {
     const sleepSmooth = this.rolling(days, cur, asleepH, window);
     const sleepTrend = long ? linearTrend(sb.points) : null;
     this.card(cards, "Sleep stages", `Hours asleep per night${sb.weekly ? " · weekly average" : ""}`,
-      (el) => stackedColumns(el, sleepRows, stages, { unit: "h", describe: sb.describe, format: (v) => hm(v * 60), trend: sleepTrend, smooth: sleepSmooth }),
+      (el) => stackedColumns(el, sleepRows, stages, { unit: "h", describe: sb.describe, format: (v) => hm(v * 60), trend: sleepTrend, smooth: sleepSmooth, gaps }),
       [
         { label: sb.weekly ? "Week of" : "Date", get: (r) => new Date(r.t).toISOString().slice(0, 10) },
         ...stages.map((st, k) => ({ label: `${st.name} (h)`, get: (r) => hm(r.values[k] * 60), num: true })),
@@ -299,7 +321,7 @@ export class HealthView {
       [{ label: "Activity", get: (r) => r.label }, { label: "Hours", get: (r) => r.value.toFixed(1), num: true }],
       rows);
 
-    this.trainingTimeCard(cards, workouts, start, end);
+    this.trainingTimeCard(cards, workouts, start, end, gaps);
     this.zonesCard(cards, workouts);
     this.periodCard(cards, cur, workouts);
     this.journalCard(cards, cur);
@@ -394,7 +416,7 @@ export class HealthView {
   }
 
   /** Training time per week, stacked by workout category. */
-  trainingTimeCard(cards, workouts, start, end) {
+  trainingTimeCard(cards, workouts, start, end, gaps) {
     const weekOf = (t) => t - ((new Date(t).getUTCDay() + 6) % 7) * DAY;
     const series = WORKOUT_CATEGORIES.map((c, i) => ({ name: c.label, color: css(`--series-${i + 1}`) }));
     const weeks = new Map();
@@ -406,7 +428,7 @@ export class HealthView {
     const rows = [...weeks].map(([t, values]) => ({ t, values }));
     const total = rows.reduce((a, r) => a + r.values.reduce((x, y) => x + y, 0), 0);
     this.card(cards, "Training time per week", `Hours by category · avg ${hm((total / Math.max(1, rows.length)) * 60)} h per week`,
-      (el) => stackedColumns(el, rows, series, { unit: "h", describe: fmtWeek, format: (v) => hm(v * 60) }),
+      (el) => stackedColumns(el, rows, series, { unit: "h", describe: fmtWeek, format: (v) => hm(v * 60), gaps }),
       [
         { label: "Week of", get: (r) => new Date(r.t).toISOString().slice(0, 10) },
         ...series.map((s, k) => ({ label: `${s.name} (h)`, get: (r) => hm(r.values[k] * 60), num: true })),
