@@ -103,7 +103,7 @@ export class SupplementDialog {
     const opts = (list, sel, labels = {}) =>
       list.map((x) => `<option value="${x}"${x === sel ? " selected" : ""}>${labels[x] ?? x}</option>`).join("");
     row.innerHTML = `<label>Name<input name="name" maxlength="60" placeholder="e.g. Creatine" autocomplete="off"></label>
-      <label>Dose<input name="dose" type="number" inputmode="decimal" min="0" step="any"></label>
+      <label>Dose<input name="dose" type="number" inputmode="decimal" min="0" step="any" maxlength="8"></label>
       <label>Unit<select name="unit">${opts(UNITS, unit, UNIT_OPTION)}</select></label>
       <label>When<select name="timing">${opts(TIMINGS, timing)}</select></label>
       <button type="button" class="icon-btn" data-remove-supp aria-label="Remove">×</button>`;

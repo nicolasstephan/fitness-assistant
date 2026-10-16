@@ -212,7 +212,8 @@ export class WorkoutView {
   }
 
   addSetRow(list, { reps = 10, kg = 0 }) {
-    const num = (name, value, attrs) => el("input", { name, type: "number", value: value || "", ...attrs });
+    // maxlength: ignored by browsers for number inputs, but keeps password managers (KeePassXC) from taking groups of them for one-time-code boxes
+    const num = (name, value, attrs) => el("input", { name, type: "number", maxLength: 6, value: value || "", ...attrs });
     list.appendChild(el("div", { className: "plan-set-row" },
       el("span", { className: "set-no" }),
       el("label", {}, num("reps", reps, { min: 1, step: 1, inputMode: "numeric", required: true, ariaLabel: "Reps" }), " reps"),
@@ -293,8 +294,8 @@ export class WorkoutView {
           const done = doneByIndex.get(i);
           block.appendChild(el("div", { className: `plan-set${done ? " done" : ""}`, dataset: { exercise: item.exercise, i: String(i) } },
             el("span", { className: "set-no", textContent: `Set ${i + 1}` }),
-            el("label", {}, el("input", { name: "reps", type: "number", min: 1, step: 1, inputMode: "numeric", value: String(done?.reps ?? target.reps) }), " reps"),
-            el("label", {}, el("input", { name: "kg", type: "number", min: 0, step: 0.5, inputMode: "decimal", placeholder: "–", value: done?.kg || target.kg || "" }), " kg"),
+            el("label", {}, el("input", { name: "reps", type: "number", maxLength: 4, min: 1, step: 1, inputMode: "numeric", value: String(done?.reps ?? target.reps) }), " reps"),
+            el("label", {}, el("input", { name: "kg", type: "number", maxLength: 6, min: 0, step: 0.5, inputMode: "decimal", placeholder: "–", value: done?.kg || target.kg || "" }), " kg"),
             el("button", { type: "button", className: "tick-btn", dataset: { tick: "" }, ariaPressed: String(!!done), ariaLabel: `Set ${i + 1} done`, textContent: "✓" })));
         }
         checklist.appendChild(block);
