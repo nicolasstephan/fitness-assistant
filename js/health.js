@@ -1,6 +1,6 @@
 // Health dashboard: WHOOP history (health/whoop.json in the private data repo).
 import { lineChart, stackedColumns, hBars, dataTable, linearTrend } from "./charts.js";
-import { checkinQuestions, supplementQuestions } from "./checkin.js";
+import { checkinQuestions, supplementQuestions, localToday } from "./checkin.js";
 import { versionOn } from "./supplements.js";
 
 const DAY = 86400000;
@@ -19,6 +19,12 @@ const WORKOUT_CATEGORIES = [
   { label: "Sports & other", match: /./ },
 ];
 const categoryIndex = (activity) => WORKOUT_CATEGORIES.findIndex((c) => c.match.test(activity ?? ""));
+
+const emptyDay = (date) => ({
+  date, recovery: null, rhr: null, hrv: null, strain: null,
+  sleep: { performance: null, asleepMin: null, deepMin: null, remMin: null, lightMin: null }, journal: {},
+});
+const hasData = (d) => d.recovery != null || d.strain != null || d.sleep.asleepMin != null;
 
 const mean = (xs) => {
   const v = xs.filter((x) => x != null);
@@ -63,7 +69,7 @@ export class HealthView {
 
   /** Days in the selected range, plus the equally long period before it (for deltas). */
   slice() {
-    const days = this.doc.days.map((d) => ({
+    const days = this.calendar().map((d) => ({
       ...d,
       t: tUTC(d.date),
       // assumed supplement intake < real WHOOP journal answers < explicit check-in answers
@@ -82,7 +88,9 @@ export class HealthView {
     const prevStart = start - (end - start + DAY);
     // compare only against a previous period that is mostly covered by data
     const prevDays = n === Infinity ? [] : days.filter((d) => d.t >= prevStart && d.t < start);
-    const prev = prevDays.length >= cur.length / 2 ? prevDays : [];
+    const covered = (ds) => ds.filter(hasData).length;
+    // both periods need data on at least half their days, e.g. not right after the import stopped
+    const prev = covered(cur) >= cur.length / 2 && covered(prevDays) >= covered(cur) / 2 ? prevDays : [];
     const workouts = this.doc.workouts
       .map((w) => ({ ...w, t: tUTC(w.start.slice(0, 10)) }))
       .filter((w) => w.t >= start);
@@ -91,6 +99,21 @@ export class HealthView {
       return t >= prevStart && t < start;
     });
     return { days, cur, prev, workouts, prevWorkouts, start, end };
+  }
+
+  /**
+   * Every calendar day from the first WHOOP day to today; missing days (gaps, and the time
+   * since the last import) are empty records so the charts show them as gaps.
+   */
+  calendar() {
+    const byDate = new Map(this.doc.days.map((d) => [d.date, d]));
+    const out = [];
+    const last = Math.max(tUTC(this.doc.days.at(-1).date), tUTC(localToday()));
+    for (let t = tUTC(this.doc.days[0].date); t <= last; t += DAY) {
+      const date = new Date(t).toISOString().slice(0, 10);
+      out.push(byDate.get(date) ?? emptyDay(date));
+    }
+    return out;
   }
 
   /** Daily points up to ~3 months, weekly means (Monday-based) beyond. */
@@ -113,7 +136,8 @@ export class HealthView {
     this.root.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-checked", b.dataset.range === this.range));
     const { from, to } = this.doc.range;
     this.root.querySelector("#health-source").textContent =
-      `WHOOP · ${fmtDay(tUTC(from))} – ${fmtDay(tUTC(to))} · imported ${new Date(this.doc.importedAt).toLocaleDateString()}`;
+      `WHOOP · ${fmtDay(tUTC(from))} – ${fmtDay(tUTC(to))} · imported ${new Date(this.doc.importedAt).toLocaleDateString()}` +
+      (to < localToday() ? ` · no data since then, re-import to fill the gap` : "");
 
     const s = this.slice();
     this.renderTiles(s);
@@ -315,7 +339,7 @@ export class HealthView {
     const card = this.card(cards, `By ${unit}`, `Averages per ${unit}; the Days column shows partial ${unit}s at the edges`, null, null, null);
     dataTable(card.querySelector(".card-body"), [
       { label: unit[0].toUpperCase() + unit.slice(1), get: (g) => label(g.k) },
-      { label: "Days", get: (g) => g.days.length, num: true },
+      { label: "Days", get: (g) => g.days.filter(hasData).length, num: true },
       { label: "Recovery %", get: (g) => fixed(avg(g, (d) => d.recovery), 0), num: true },
       { label: "HRV", get: (g) => fixed(avg(g, (d) => d.hrv), 0), num: true },
       { label: "RHR", get: (g) => fixed(avg(g, (d) => d.rhr), 1), num: true },

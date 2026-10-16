@@ -13,6 +13,9 @@ import { checkForUpdate } from "./update-check.js";
 
 const $ = (sel) => document.querySelector(sel);
 
+// iOS Safari ignores user-scalable=no; block its pinch-zoom gesture directly
+document.addEventListener("gesturestart", (e) => e.preventDefault());
+
 const viewer = new MuscleViewer($("#viewer"));
 const health = new HealthView($("#health-view"));
 const state = {

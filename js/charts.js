@@ -123,6 +123,11 @@ function frame(container, height) {
   return { svg, width, height, tip: tooltip(container) };
 }
 
+function noData(container) {
+  container.replaceChildren();
+  container.textContent = "No data in this period.";
+}
+
 function yAxis(svg, ticks, y, x0, x1, fmt) {
   for (const v of ticks) {
     svgEl("line", { x1: x0, x2: x1, y1: y(v), y2: y(v), class: "grid" }, svg);
@@ -142,7 +147,7 @@ export function lineChart(container, points, opts) {
   const smooth = opts.smooth?.points ?? null;
   const all = smooth ? [...points, ...smooth] : points;
   const vals = all.map((p) => p.v).filter((v) => v != null);
-  if (!vals.length) return;
+  if (!vals.length) return noData(container);
   const t0 = Math.min(...all.map((p) => p.t)), t1 = Math.max(...all.map((p) => p.t));
   const ticks = opts.ticks ?? niceTicks(Math.min(...vals), Math.max(...vals));
   const [lo, hi] = [ticks[0], ticks.at(-1)];
@@ -220,7 +225,7 @@ export function lineChart(container, points, opts) {
 export function stackedColumns(container, rows, series, opts) {
   const { svg, width, height, tip } = frame(container, opts.height ?? 200);
   const totals = rows.map((r) => r.values.reduce((a, b) => a + (b ?? 0), 0));
-  if (!totals.some((v) => v > 0)) return;
+  if (!totals.some((v) => v > 0)) return noData(container);
   const ticks = niceTicks(0, Math.max(...totals));
   const hi = ticks.at(-1);
   const plotW = width - PAD.left - PAD.right;
