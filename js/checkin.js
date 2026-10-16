@@ -1,6 +1,8 @@
 // Daily check-in: alcohol, late caffeine, stress, perceived fitness, body weight.
-// Stored as journal.json in the private data repo: { version, days: { "YYYY-MM-DD": entry } }.
+// Stored as journal.json in the private data repo:
+//   { version, days: { "YYYY-MM-DD": entry }, supplements: { versions } }   (see supplements.js)
 import { lineChart } from "./charts.js";
+import { normalizeSupplements, mergeSupplements, versionOn, describeItem } from "./supplements.js";
 
 const DAY = 86400000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -23,6 +25,10 @@ function normalizeEntry(e) {
   for (const k of ["alcohol", "lateCaffeine"]) if (typeof e[k] === "boolean") out[k] = e[k];
   for (const k of ["stress", "fitness"]) if (Number.isInteger(e[k]) && e[k] >= 1 && e[k] <= 5) out[k] = e[k];
   if (Number.isFinite(e.weightKg) && e.weightKg > 20 && e.weightKg < 400) out.weightKg = Math.round(e.weightKg * 10) / 10;
+  if (Array.isArray(e.skipped)) {
+    const skipped = [...new Set(e.skipped.filter((n) => typeof n === "string" && n.trim()))];
+    if (skipped.length) out.skipped = skipped;
+  }
   return Object.keys(out).length ? out : null;
 }
 
@@ -32,20 +38,31 @@ export function normalizeJournal(raw) {
     const n = DATE_RE.test(date) && normalizeEntry(e);
     if (n) days[date] = n;
   }
-  return { version: 1, days };
+  return { version: 1, days, supplements: normalizeSupplements(raw?.supplements) };
 }
 
 /** Field-level merge per day; local values win. */
 export function mergeJournals(remote, local) {
   const days = { ...remote.days };
   for (const [date, e] of Object.entries(local.days)) days[date] = { ...days[date], ...e };
-  return normalizeJournal({ days });
+  return normalizeJournal({ days, supplements: mergeSupplements(remote.supplements, local.supplements) });
+}
+
+/**
+ * Supplements as yes/no questions ("Took creatine?", same wording as the WHOOP journal), for the
+ * journal-vs-recovery analysis. `protocol` is that day's version: each item counts as taken unless skipped.
+ * These are assumptions, so real answers (WHOOP journal) should override them.
+ */
+export function supplementQuestions(e, protocol) {
+  const q = {};
+  for (const item of protocol?.items ?? []) q[`Took ${item.name.toLowerCase()}?`] = !(e?.skipped ?? []).includes(item.name);
+  return q;
 }
 
 /** Check-in answers phrased as yes/no journal questions, for the "journal vs. recovery" analysis. */
 export function checkinQuestions(e) {
-  if (!e) return {};
   const q = {};
+  if (!e) return q;
   if (e.alcohol != null) q["Have any alcoholic drinks?"] = e.alcohol; // same wording as the WHOOP journal
   if (e.lateCaffeine != null) q["Caffeine after 2 pm?"] = e.lateCaffeine;
   if (e.stress != null) q["High stress (4–5)?"] = e.stress >= 4;
@@ -56,10 +73,18 @@ export function checkinQuestions(e) {
 // ---------- view
 
 export class CheckinView {
-  constructor(root, { getJournal, saveJournal }) {
+  constructor(root, { getJournal, saveJournal, editProtocol }) {
     this.root = root;
     this.getJournal = getJournal;
     this.saveJournal = saveJournal;
+    root.querySelector("#supp-edit").addEventListener("click", editProtocol);
+    root.querySelector("#supp-today").addEventListener("click", (e) => {
+      const name = e.target.closest("[data-supp]")?.dataset.supp;
+      if (!name) return;
+      const skipped = new Set(this.entry().skipped ?? []);
+      skipped.has(name) ? skipped.delete(name) : skipped.add(name);
+      this.set("skipped", skipped.size ? [...skipped] : undefined);
+    });
     this.date = localToday();
 
     root.querySelector("#checkin-prev").addEventListener("click", () => this.go(-1));
@@ -100,7 +125,7 @@ export class CheckinView {
     const journal = this.getJournal();
     const entry = { ...this.entry(), [field]: value };
     if (value === undefined) delete entry[field];
-    this.saveJournal(normalizeJournal({ days: { ...journal.days, [this.date]: entry } }));
+    this.saveJournal(normalizeJournal({ ...journal, days: { ...journal.days, [this.date]: entry } }));
   }
 
   render() {
@@ -116,7 +141,36 @@ export class CheckinView {
     r.querySelector("#fitness-anchor").textContent = FITNESS_ANCHORS[e.fitness] ?? "How well and active do you feel?";
     const weight = r.querySelector("#checkin-weight");
     if (document.activeElement !== weight) weight.value = e.weightKg ?? "";
+    this.renderSupplements(e);
     this.renderCharts();
+  }
+
+  /** The protocol for the selected day: everything counts as taken unless tapped as skipped. */
+  renderSupplements(e) {
+    const version = versionOn(this.getJournal().supplements, this.date);
+    const list = this.root.querySelector("#supp-today");
+    const items = version?.items ?? [];
+    this.root.querySelector("#supp-hint").textContent = !version
+      ? "No protocol yet. Set it up once; it then applies every day until you change it."
+      : items.length
+        ? `Protocol since ${fmtDate(version.from)}. Taken unless you tap one as skipped.`
+        : `No supplements since ${fmtDate(version.from)}.`;
+    const skipped = new Set(e.skipped ?? []);
+    list.replaceChildren(
+      ...items.map((item) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "supp-chip";
+        b.dataset.supp = item.name;
+        b.setAttribute("aria-pressed", !skipped.has(item.name));
+        const label = document.createElement("span");
+        label.textContent = `${skipped.has(item.name) ? "✕" : "✓"} ${describeItem(item)}`;
+        const when = document.createElement("small");
+        when.textContent = skipped.has(item.name) ? "skipped" : item.timing.toLowerCase();
+        b.append(label, when);
+        return b;
+      }),
+    );
   }
 
   /** Last 30 days: weight (with 7-day average), stress and perceived fitness. */

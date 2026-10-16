@@ -119,6 +119,15 @@
           <input id="checkin-weight" type="number" inputmode="decimal" step="0.1" min="20" max="400" placeholder="–">
         </div>
 
+        <div class="checkin-supp">
+          <div class="checkin-supp-head">
+            <span>Supplements</span>
+            <button id="supp-edit" class="ghost small" type="button">Edit protocol</button>
+          </div>
+          <p id="supp-hint" class="hint"></p>
+          <div id="supp-today" class="supp-chips"></div>
+        </div>
+
         <h3 class="checkin-h">Last 30 days</h3>
         <p id="checkin-alcohol-summary" class="hint"></p>
         <div class="checkin-chart" hidden><h4>Body weight</h4><div id="checkin-weight-chart"></div></div>
@@ -170,6 +179,25 @@
         <span class="spacer"></span>
         <button type="button" id="log-cancel" class="ghost">Cancel</button>
         <button type="submit" class="primary-btn">Save session</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="supp-dialog" class="supp-dialog">
+    <form>
+      <h2>Supplement protocol</h2>
+      <p class="hint">Applies every day from the start date until you change it. Saving with a new start date keeps the old protocol for the days before.</p>
+      <label class="date-label">Valid from<input name="supp-from" type="date" required></label>
+      <div id="supp-rows"></div>
+      <button type="button" id="supp-add" class="ghost small">+ Add supplement</button>
+      <section hidden>
+        <h3>History</h3>
+        <ul id="supp-versions" class="log-history"></ul>
+      </section>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" id="supp-cancel" class="ghost">Cancel</button>
+        <button type="submit" class="primary-btn">Save protocol</button>
       </div>
     </form>
   </dialog>

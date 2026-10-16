@@ -8,6 +8,7 @@ import { LogDialog, normalizeLog, mergeLogs, lastSessionText } from "./training-
 import { CheckinView, normalizeJournal, mergeJournals, localToday } from "./checkin.js";
 import { weeklySets, volumeColors, VOLUME_BINS, VOLUME_TARGET } from "./volume.js";
 import { WorkoutView } from "./workouts.js";
+import { SupplementDialog } from "./supplements.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -138,7 +139,7 @@ trainingLog.onChange = () => {
 };
 journal.onChange = (doc) => {
   checkin.render();
-  health.setCheckins(doc.days);
+  health.setJournal(doc);
 };
 
 const saveMyExercises = () => profile.update({ version: 1, myExercises: state.mine });
@@ -443,9 +444,16 @@ const workoutView = new WorkoutView($("#exercises-tab"), {
 
 // ---------- daily check-in
 
+const supplementDialog = new SupplementDialog($("#supp-dialog"), {
+  getSupplements: () => journal.doc.supplements,
+  save: (supplements) => journal.update({ ...journal.doc, supplements }),
+  today: localToday,
+});
+
 const checkin = new CheckinView($("#checkin"), {
   getJournal: () => journal.doc,
   saveJournal: (doc) => journal.update(doc),
+  editProtocol: () => supplementDialog.open(),
 });
 
 // ---------- sync settings dialog
@@ -499,7 +507,7 @@ const startVolume = new URLSearchParams(location.hash.slice(1)).get("volume") ==
 state.mine = profile.doc.myExercises;
 readHash();
 renderMyExercises();
-health.setCheckins(journal.doc.days);
+health.setJournal(journal.doc);
 if (startVolume) setVolume(true);
 const cachedHealth = readLocal(HEALTH_CACHE_KEY, null);
 if (cachedHealth) health.setData(cachedHealth);

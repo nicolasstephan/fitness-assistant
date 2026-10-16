@@ -1,6 +1,7 @@
 // Health dashboard: WHOOP history (health/whoop.json in the private data repo).
 import { lineChart, stackedColumns, hBars, dataTable, linearTrend } from "./charts.js";
-import { checkinQuestions } from "./checkin.js";
+import { checkinQuestions, supplementQuestions } from "./checkin.js";
+import { versionOn } from "./supplements.js";
 
 const DAY = 86400000;
 const RANGES = { 30: 30, 90: 90, 365: 365, all: Infinity };
@@ -48,9 +49,9 @@ export class HealthView {
     this.render();
   }
 
-  /** Daily check-ins (journal.json days); their answers join the journal-vs-recovery analysis. */
-  setCheckins(days) {
-    this.checkins = days ?? {};
+  /** The check-in journal (journal.json); answers and supplement protocol join the journal-vs-recovery analysis. */
+  setJournal(journal) {
+    this.journal = journal;
     this.render();
   }
 
@@ -65,7 +66,14 @@ export class HealthView {
     const days = this.doc.days.map((d) => ({
       ...d,
       t: tUTC(d.date),
-      journal: { ...d.journal, ...checkinQuestions(this.checkins?.[d.date]) },
+      // assumed supplement intake < real WHOOP journal answers < explicit check-in answers
+      journal: this.journal
+        ? {
+          ...supplementQuestions(this.journal.days[d.date], versionOn(this.journal.supplements, d.date)),
+          ...d.journal,
+          ...checkinQuestions(this.journal.days[d.date]),
+        }
+        : d.journal,
     }));
     const end = days.at(-1).t;
     const n = RANGES[this.range];
