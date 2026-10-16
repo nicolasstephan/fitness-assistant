@@ -64,7 +64,8 @@
         </div>
       </header>
 
-      <div class="tab-body" data-tab-body="exercises">
+      <div class="tab-body" data-tab-body="exercises" id="exercises-tab">
+        <div id="workout-bar" class="workout-bar"></div>
         <div class="search-row">
           <input id="exercise-search" type="search" placeholder="Search to add exercises…" autocomplete="off">
           <button id="clear-selection" class="ghost">Clear</button>
@@ -74,6 +75,10 @@
           <p class="hint" id="my-hint"></p>
           <ul id="exercise-list" class="list"></ul>
         </div>
+        <section id="workout-history" class="workout-history" hidden>
+          <h3>Workouts</h3>
+          <ul class="list"></ul>
+        </section>
       </div>
 
       <div class="tab-body" data-tab-body="muscles" hidden>
@@ -156,6 +161,7 @@
 
       <h3>New session</h3>
       <label class="date-label">Date<input name="date" type="date" required></label>
+      <p id="log-workout-note" class="hint" hidden></p>
       <div id="log-sets"></div>
       <button type="button" id="log-add-set" class="ghost small">+ Add set</button>
       <p class="hint">Weight: the load in kg. For bodyweight exercises, only extra weight (vest, belt); otherwise leave empty.</p>

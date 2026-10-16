@@ -342,6 +342,19 @@ dialog input {
 .checkin-h { margin: 18px 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .checkin-chart h4 { margin: 10px 0 2px; font-size: 13px; font-weight: 500; }
 
+.workout-bar { margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.workout-bar.running { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.workout-bar .hint { margin: 8px 0 0; }
+.workout-bar .hint .ghost.small { margin-left: 8px; }
+.workout-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.workout-live::before { content: "●"; color: var(--primary); margin-right: 6px; }
+#workout-elapsed { font-size: 20px; font-variant-numeric: tabular-nums; }
+.workout-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.primary-btn.small { padding: 6px 12px; font-size: 14px; }
+.workout-history h3 { margin: 18px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.workout-history li { cursor: default; }
+.workout-history small.tracker-match { color: var(--text); opacity: 0.75; }
+
 .credits { padding: 10px 16px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
 .credits a { color: inherit; }
 
@@ -432,7 +445,7 @@ body[data-view="health"] .layout { display: none; }
 .chart-tip-row strong { color: var(--text); }
 
 .hbars { display: flex; flex-direction: column; gap: 6px; }
-.hbar-row { display: grid; grid-template-columns: 120px 1fr 56px; align-items: center; gap: 8px; font-size: 13px; }
+.hbar-row { display: grid; grid-template-columns: 120px 1fr auto; align-items: center; gap: 8px; font-size: 13px; }
 .hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .hbar-track { min-width: 0; }
 .hbar { display: block; height: 14px; border-radius: 0 4px 4px 0; min-width: 2px; }

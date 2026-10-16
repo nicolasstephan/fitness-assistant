@@ -385,12 +385,17 @@ export class HealthView {
 
   /** Total minutes in each WHOOP heart-rate zone. */
   zonesCard(cards, workouts) {
-    const minutes = [0, 0, 0, 0, 0];
-    for (const w of workouts) w.zones.forEach((pct, i) => (minutes[i] += ((w.durationMin ?? 0) * pct) / 100));
+    // WHOOP reports % of the workout in zones 1-5; the rest is below zone 1
+    const minutes = [0, 0, 0, 0, 0, 0];
+    for (const w of workouts) {
+      const d = w.durationMin ?? 0;
+      w.zones.forEach((pct, i) => (minutes[i + 1] += (d * pct) / 100));
+      minutes[0] += (d * Math.max(0, 100 - w.zones.reduce((a, b) => a + b, 0))) / 100;
+    }
     const total = minutes.reduce((a, b) => a + b, 0);
-    const rows = minutes.map((m, i) => ({ label: `Zone ${i + 1}${["", " · easy", "", "", " · max"][i]}`, value: m }));
+    const rows = minutes.map((m, i) => ({ label: i ? `Zone ${i}` : "Below zone 1", value: m }));
     const pct = (m) => (total ? `${Math.round((m / total) * 100)}%` : "–");
-    this.card(cards, "Heart-rate zones", "Minutes in each WHOOP heart-rate zone during workouts",
+    this.card(cards, "Heart-rate zones", "Workout time in each WHOOP heart-rate zone",
       (el) => (total ? hBars(el, rows, { color: css("--series-1"), format: (v) => `${hm(v)} h · ${pct(v)}` }) : (el.textContent = "No workouts in this period.")),
       [{ label: "Zone", get: (r) => r.label }, { label: "Time (h)", get: (r) => hm(r.value), num: true }, { label: "Share", get: (r) => pct(r.value), num: true }],
       rows);

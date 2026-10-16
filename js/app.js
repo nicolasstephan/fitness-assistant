@@ -7,6 +7,7 @@ import { SyncedDoc, readLocal, writeLocal } from "./synced-doc.js";
 import { LogDialog, normalizeLog, mergeLogs, lastSessionText } from "./training-log.js";
 import { CheckinView, normalizeJournal, mergeJournals, localToday } from "./checkin.js";
 import { weeklySets, volumeColors, VOLUME_BINS, VOLUME_TARGET } from "./volume.js";
+import { WorkoutView } from "./workouts.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -132,6 +133,7 @@ profile.onChange = (doc) => {
 };
 trainingLog.onChange = () => {
   renderMyExercises();
+  workoutView.render();
   if (state.volume) showVolume();
 };
 journal.onChange = (doc) => {
@@ -169,6 +171,7 @@ async function loadHealth(cfg) {
     }
     health.setMessage("");
     health.setData(doc);
+    workoutView.render(); // tracker matches
     writeLocal(HEALTH_CACHE_KEY, doc);
   } catch (err) {
     health.setMessage(`Could not load health data: ${err.message}`);
@@ -429,6 +432,15 @@ const logDialog = new LogDialog($("#log-dialog"), {
   saveLog: (doc) => trainingLog.update(doc),
 });
 
+// ---------- timed workouts
+
+const workoutView = new WorkoutView($("#exercises-tab"), {
+  getLog: () => trainingLog.doc,
+  saveLog: (doc) => trainingLog.update(doc),
+  exerciseById,
+  getTracker: () => (health.doc ? { source: "WHOOP", workouts: health.doc.workouts } : null),
+});
+
 // ---------- daily check-in
 
 const checkin = new CheckinView($("#checkin"), {
@@ -491,6 +503,7 @@ health.setCheckins(journal.doc.days);
 if (startVolume) setVolume(true);
 const cachedHealth = readLocal(HEALTH_CACHE_KEY, null);
 if (cachedHealth) health.setData(cachedHealth);
+workoutView.render(); // after the health cache, so tracker matches show right away
 const syncCfg = readLocal(SYNC_KEY, null);
 if (syncCfg) {
   connectGitHub(syncCfg).catch((err) => {

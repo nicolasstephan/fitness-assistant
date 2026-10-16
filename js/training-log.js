@@ -1,5 +1,6 @@
-// Strength training log: sessions of sets (reps, optional extra weight) per exercise,
-// stored as training-log.json in the private data repo.
+// Strength training log, stored as training-log.json in the private data repo:
+//   workouts: [{ id, start, end }]   timed workouts ("YYYY-MM-DDTHH:MM" local time; end null while running)
+//   sessions: [{ id, date, exercise, sets: [{ reps, kg }], workoutId?, time? }]   one per exercise
 import { lineChart } from "./charts.js";
 
 const DAY = 86400000;
@@ -8,26 +9,50 @@ const DAY = 86400000;
 
 const num = (v) => (Number.isFinite(+v) && +v >= 0 ? +v : 0);
 
+const LOCAL_TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
 function normalizeSession(s) {
   if (!s || typeof s.exercise !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s.date ?? "")) return null;
   const sets = (Array.isArray(s.sets) ? s.sets : [])
     .map((x) => ({ reps: Math.round(num(x?.reps)), kg: num(x?.kg) }))
     .filter((x) => x.reps > 0);
-  return sets.length ? { id: String(s.id ?? `${s.date}-${Math.random().toString(36).slice(2)}`), date: s.date, exercise: s.exercise, sets } : null;
+  if (!sets.length) return null;
+  const out = { id: String(s.id ?? `${s.date}-${Math.random().toString(36).slice(2)}`), date: s.date, exercise: s.exercise, sets };
+  if (typeof s.workoutId === "string") out.workoutId = s.workoutId;
+  if (/^\d{2}:\d{2}$/.test(s.time ?? "")) out.time = s.time;
+  return out;
+}
+
+function normalizeWorkout(w) {
+  if (!w || typeof w.id !== "string" || !LOCAL_TIME_RE.test(w.start ?? "")) return null;
+  return { id: w.id, start: w.start, end: LOCAL_TIME_RE.test(w.end ?? "") && w.end >= w.start ? w.end : null };
 }
 
 export function normalizeLog(raw) {
   const sessions = (Array.isArray(raw?.sessions) ? raw.sessions : []).map(normalizeSession).filter(Boolean);
-  sessions.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-  return { version: 1, sessions };
+  sessions.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "").localeCompare(b.time ?? "") || a.id.localeCompare(b.id));
+  const workouts = (Array.isArray(raw?.workouts) ? raw.workouts : []).map(normalizeWorkout).filter(Boolean);
+  workouts.sort((a, b) => a.start.localeCompare(b.start));
+  return { version: 2, workouts, sessions };
 }
 
-/** Union by session id; the local copy wins for the same id. */
+/** Union by id (sessions and workouts); the local copy wins for the same id. */
 export function mergeLogs(remote, local) {
-  const byId = new Map(remote.sessions.map((s) => [s.id, s]));
-  for (const s of local.sessions) byId.set(s.id, s);
-  return normalizeLog({ sessions: [...byId.values()] });
+  const union = (a, b) => {
+    const byId = new Map(a.map((x) => [x.id, x]));
+    for (const x of b) byId.set(x.id, x);
+    return [...byId.values()];
+  };
+  return normalizeLog({ workouts: union(remote.workouts, local.workouts), sessions: union(remote.sessions, local.sessions) });
 }
+
+/** Local wall-clock time as "YYYY-MM-DDTHH:MM". */
+export function localNow() {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+export const activeWorkout = (log) => log.workouts.find((w) => !w.end) ?? null;
 
 export const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
@@ -67,6 +92,7 @@ export class LogDialog {
   constructor(dialog, { getLog, saveLog }) {
     this.dialog = dialog;
     this.getLog = getLog;
+    this.workout = null; // running workout while the dialog is open
     this.saveLog = saveLog;
     this.exercise = null;
 
@@ -101,7 +127,12 @@ export class LogDialog {
       }
       const log = this.getLog();
       const session = { id: newId(), date: dialog.querySelector("[name=date]").value || today(), exercise: this.exercise.id, sets };
-      this.saveLog(normalizeLog({ sessions: [...log.sessions, session] }));
+      if (this.workout) {
+        session.date = this.workout.start.slice(0, 10);
+        session.workoutId = this.workout.id;
+        session.time = localNow().slice(11);
+      }
+      this.saveLog(normalizeLog({ ...log, sessions: [...log.sessions, session] }));
       dialog.close();
     });
   }
@@ -110,7 +141,14 @@ export class LogDialog {
     this.exercise = exercise;
     const d = this.dialog;
     d.querySelector("#log-title").textContent = exercise.name;
-    d.querySelector("[name=date]").value = today();
+    this.workout = activeWorkout(this.getLog());
+    const date = d.querySelector("[name=date]");
+    date.value = this.workout ? this.workout.start.slice(0, 10) : today();
+    date.disabled = !!this.workout;
+    d.querySelector("#log-workout-note").hidden = !this.workout;
+    d.querySelector("#log-workout-note").textContent = this.workout
+      ? `Adds to the workout started at ${this.workout.start.slice(11)}.`
+      : "";
     d.querySelector("#log-error").textContent = "";
     d.querySelector("#log-sets").replaceChildren();
     // prefill with the last session's sets: the usual starting point
