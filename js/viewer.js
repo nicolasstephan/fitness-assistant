@@ -35,6 +35,7 @@ export class MuscleViewer {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.12;
+    this.controls.enablePan = false; // always orbit around the body's center
     this.controls.addEventListener("change", () => this.requestRender());
     this.controls.addEventListener("start", () => (this.anim = null)); // user takes over
 
