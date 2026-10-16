@@ -9,6 +9,7 @@ import { CheckinView, normalizeJournal, mergeJournals, localToday } from "./chec
 import { weeklySets, volumeColors, workoutMuscles, VOLUME_BINS, VOLUME_TARGET } from "./volume.js";
 import { WorkoutView } from "./workouts.js";
 import { SupplementDialog } from "./supplements.js";
+import { checkForUpdate } from "./update-check.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -566,6 +567,9 @@ if (syncCfg) {
   renderSyncStatus();
   if (!cachedHealth) health.setMessage("Connect GitHub sync (⚙) to load your health data.");
 }
+// after everything has loaded, make sure no file is a stale cached copy from before a deploy
+window.addEventListener("load", () => setTimeout(() => checkForUpdate().catch(() => {}), 1500));
+
 viewer
   .load("assets/models/muscles.glb", "assets/models/skeleton.glb", (p) => ($("#loading-fill").style.width = `${Math.round(p * 100)}%`))
   .then(() => $("#loading").remove())
