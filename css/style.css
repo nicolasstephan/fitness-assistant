@@ -248,6 +248,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: 18px;
   line-height: 1;
 }
+.panel-expand { display: none; }
+@media (max-width: 760px) { .panel-expand { display: inline-block; } }
 .icon-btn:hover { color: var(--text); border-color: var(--muted); }
 .icon-btn.add { background: var(--accent); border-color: var(--accent); color: #fff; }
 .icon-btn.add:disabled { background: var(--chip); border-color: var(--border); color: var(--muted); cursor: default; }
@@ -512,7 +514,11 @@ body[data-view="health"] .layout { display: none; }
 /* ---------- phone layout: model on top, panel as bottom sheet */
 
 @media (max-width: 760px) {
-  .layout { grid-template-columns: 1fr; grid-template-rows: 58fr 42fr; }
+  .layout { grid-template-columns: 1fr; grid-template-rows: 40fr 60fr; }
+  /* expanded: the panel takes the whole screen, the model is hidden */
+  body.panel-expanded .layout { grid-template-rows: 0 1fr; }
+  body.panel-expanded .stage { visibility: hidden; }
+  body.panel-expanded .panel { border-top: 0; }
   .panel { border-left: 0; border-top: 1px solid var(--border); }
   .panel-head h1 { font-size: 15px; }
   .panel-head { padding-top: 6px; }

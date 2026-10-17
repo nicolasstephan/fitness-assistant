@@ -232,6 +232,18 @@ function showView(view) {
 }
 
 $("#health-open").addEventListener("click", () => showView("health"));
+
+// phone: the panel can take the whole screen (remembered per device)
+function setPanelExpanded(on) {
+  document.body.classList.toggle("panel-expanded", on);
+  const btn = $("#panel-expand");
+  btn.setAttribute("aria-pressed", String(on));
+  btn.textContent = on ? "⤡" : "⤢";
+  btn.title = btn.ariaLabel = on ? "Show model" : "Expand panel";
+  try { localStorage.setItem("panelExpanded", on ? "1" : ""); } catch {}
+}
+$("#panel-expand").addEventListener("click", () => setPanelExpanded(!document.body.classList.contains("panel-expanded")));
+try { setPanelExpanded(localStorage.getItem("panelExpanded") === "1"); } catch { setPanelExpanded(false); }
 $("#health-back").addEventListener("click", () => showView("body"));
 
 const primaryLabels = (e) => e.primary.map((g) => groupById.get(g)?.label ?? g).join(" · ");
