@@ -10,6 +10,7 @@ import { weeklySets, volumeColors, workoutMuscles, VOLUME_BINS, VOLUME_TARGET } 
 import { WorkoutView } from "./workouts.js";
 import { SupplementDialog } from "./supplements.js";
 import { checkForUpdate } from "./update-check.js";
+import { getThemeMode, setThemeMode } from "./theme.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -530,6 +531,14 @@ function openSyncDialog() {
 }
 
 $("#sync-open").addEventListener("click", openSyncDialog);
+
+// appearance (in the settings dialog): System / Light / Dark; charts and muscle colors follow on change
+$("#theme-mode").value = getThemeMode();
+$("#theme-mode").addEventListener("change", (e) => setThemeMode(e.target.value));
+addEventListener("themechange", () => {
+  if (state.volume) showVolume();
+  if (document.body.dataset.view === "health") health.render();
+});
 $("#sync-status").addEventListener("click", openSyncDialog);
 $("#sync-cancel").addEventListener("click", () => dialog.close());
 

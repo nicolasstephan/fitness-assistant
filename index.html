@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#16181d">
+  <meta name="theme-color" content="#ffffff">
+  <script>try{var m=localStorage.getItem("theme")||"system";document.documentElement.dataset.theme=m==="system"?(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):m}catch(e){}</script>
   <title>Fitness Assistant</title>
   <link rel="stylesheet" href="css/style.css">
   <script type="importmap">
@@ -54,7 +55,7 @@
           <span class="title-actions">
             <button id="health-open" class="ghost small">Health</button>
             <button id="panel-expand" class="icon-btn panel-expand" aria-pressed="false" aria-label="Expand panel" title="Expand panel">⤢</button>
-            <button id="sync-open" class="icon-btn" aria-label="Sync settings" title="Sync settings">⚙</button>
+            <button id="sync-open" class="icon-btn" aria-label="Settings" title="Settings">⚙</button>
           </span>
         </div>
         <button id="sync-status" class="sync-status" type="button"></button>
@@ -244,6 +245,9 @@
       <label>Repository<input name="repo" placeholder="username/fitness-data" required autocomplete="off"></label>
       <label>Token<input name="token" type="password" placeholder="github_pat_…" required autocomplete="off"></label>
       <p id="sync-error" class="sync-error" role="status"></p>
+      <label>Appearance<select id="theme-mode">
+        <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
+      </select></label>
       <div class="dialog-actions">
         <button type="button" id="sync-disconnect" class="ghost danger">Disconnect</button>
         <span class="spacer"></span>
