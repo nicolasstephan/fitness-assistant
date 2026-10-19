@@ -1,9 +1,9 @@
 # Design baseline for new projects (GUI)
 
 Starting point for every new project with an interface. Copy into the project as `DESIGN.md` and adapt.
-Source: the Landscape Prototype Villa Massimo viewer (`landscape-prototype`, `app/viewer/index.html`); its
+Source: the Landscape Prototype viewer (`landscape-prototype`, `app/viewer/index.html`); its
 settings are copied here. The one deliberate difference: the page background is **white** in light mode
-and **dark gray** in dark mode (Villa Massimo uses `#e7e8ea` and `#0d0d0f`).
+and **dark gray** in dark mode (the viewer uses `#e7e8ea` and `#0d0d0f`).
 First applied to: digital-library website (2026-10-17).
 
 ## Theme
@@ -15,7 +15,7 @@ First applied to: digital-library website (2026-10-17).
   canvas and chart colors (read from the CSS variables on every theme change).
 - Font: `system-ui, sans-serif`.
 
-## Tokens (Villa Massimo)
+## Tokens (Landscape Prototype)
 Set on `<html data-theme="light|dark">`. Components use only these variables, never hard-coded colors.
 ```css
 :root, [data-theme="light"] {
@@ -36,7 +36,7 @@ Set on `<html data-theme="light|dark">`. Components use only these variables, ne
 }
 ```
 
-## Components (Villa Massimo)
+## Components (Landscape Prototype)
 ```css
 html, body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; }
 /* floating panel over a canvas/map */
