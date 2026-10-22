@@ -344,7 +344,7 @@ dialog input {
 .checkin-nav .icon-btn:disabled { opacity: 0.35; cursor: default; }
 .checkin-q { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .checkin-q > span, .checkin-q > label { display: flex; flex-direction: column; font-size: 14px; }
-.checkin-q small { color: var(--muted); font-size: 11px; }
+.checkin-q small { color: var(--muted); font-size: 12px; }
 .seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex: none; }
 .seg button { border: 0; background: var(--panel); padding: 6px 11px; min-width: 36px; font-size: 13px; }
 .seg button + button { border-left: 1px solid var(--border); }
@@ -362,7 +362,6 @@ dialog input {
 #workout-elapsed { font-size: 20px; font-variant-numeric: tabular-nums; }
 .workout-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .primary-btn.small { padding: 6px 12px; font-size: 14px; }
-.workout-history h3 { margin: 18px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .workout-history li { cursor: default; }
 .workout-history small.tracker-match { color: var(--text); opacity: 0.75; }
 
@@ -371,7 +370,7 @@ dialog input {
 .checkin-supp .hint { margin: 4px 0 8px; }
 .supp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .supp-chip { display: flex; flex-direction: column; align-items: flex-start; border: 1px solid var(--border); background: var(--chip); border-radius: 10px; padding: 5px 10px; font-size: 13px; text-align: left; }
-.supp-chip small { color: var(--muted); font-size: 11px; }
+.supp-chip small { color: var(--muted); font-size: 12px; }
 .supp-chip[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .supp-chip[aria-pressed="false"] span { text-decoration: line-through; color: var(--muted); }
 .supp-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
@@ -388,12 +387,20 @@ dialog select { padding: 8px 6px; border: 1px solid var(--border); border-radius
 
 .workout-plans { margin-bottom: 12px; }
 .workout-plans-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-.workout-plans-head h3, .workout-history h3, .section-head h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
-.section-head { margin: 4px 0 8px; }
+.workout-plans-head h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+/* collapsible panel sections: heading with a chevron, closed by default */
+.fold { margin-top: 6px; border-top: 1px solid var(--border); }
+.fold > summary { list-style: none; cursor: pointer; padding: 12px 0 8px; display: flex; align-items: center; gap: 8px; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: "›"; color: var(--muted); font-size: 18px; line-height: 1; transition: rotate 0.15s; }
+.fold[open] > summary::before { rotate: 90deg; }
+.fold > summary h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.fold > summary:hover h3 { color: var(--text); }
+.fold .count { font-weight: 400; }
+.fold[open] { padding-bottom: 8px; }
 .workout-history small.when { color: var(--text); opacity: 0.75; }
 .workout-plans-head span { display: flex; gap: 6px; }
 .workout-plans .list li { cursor: default; }
-.workout-history h3 { margin: 18px 0 4px; }
 .plan-checklist { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
 .plan-exercise { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
 .plan-exercise-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
@@ -423,7 +430,11 @@ dialog h3.dialog-h { margin: 16px 0 0; font-size: 13px; text-transform: uppercas
 
 /* ---------- health view */
 
-body[data-view="health"] .layout { display: none; }
+body:not([data-view="exercise"]) .layout { display: none; }
+
+/* today: the daily check-in as its own page, one readable column */
+.today { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 16px 32px; }
+.today-inner { max-width: 560px; margin: 0 auto; }
 
 .health {
   flex: 1;

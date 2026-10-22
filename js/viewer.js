@@ -23,7 +23,8 @@ export class MuscleViewer {
     this.muscleMeshes = [];
     this.highlight = { primary: new Set(), secondary: new Set() };
     this.selected = null; // mesh
-    this.xray = false;
+    this.xray = true; // default: x-ray on, skeleton off
+    this.skeletonVisible = false;
     this.insets = { top: 0, bottom: 0 }; // px of the stage covered by floating UI
     this.onPick = () => {};
 
@@ -91,6 +92,7 @@ export class MuscleViewer {
       if (o.isMesh) o.material = this.materials.skeleton;
     });
     this.skeleton = skeleton.scene;
+    this.skeleton.visible = this.skeletonVisible;
     this.model.add(skeleton.scene, muscles.scene);
 
     // center on origin, scale to ~1.8 units tall
@@ -167,6 +169,7 @@ export class MuscleViewer {
   }
 
   setSkeletonVisible(on) {
+    this.skeletonVisible = on;
     if (this.skeleton) this.skeleton.visible = on;
     this.requestRender();
   }

@@ -334,6 +334,7 @@ export class WorkoutView {
     const section = this.root.querySelector("#workout-history");
     const finished = log.workouts.filter((w) => w.end).slice(-10).reverse();
     section.hidden = !finished.length;
+    section.querySelector(".count").textContent = finished.length ? `(${finished.length})` : "";
     const tracker = this.getTracker();
     section.querySelector("ul").replaceChildren(
       ...finished.map((w) => {

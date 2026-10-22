@@ -226,13 +226,18 @@ async function loadHealth(cfg) {
   }
 }
 
-// ---------- the two sections, switched in the app bar: health (dashboard, default) / exercise (3D model + panel)
+// ---------- three sections, switched in the app bar: health (dashboard, default) / exercise (3D model + panel) /
+// today (daily check-in)
+
+const VIEWS = ["health", "exercise", "today"];
 
 function showView(view) {
   document.body.dataset.view = view;
   $("#health-view").hidden = view !== "health";
+  $("#checkin").hidden = view !== "today";
   document.querySelectorAll("[data-show]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.show === view)));
   if (view === "health") health.render();
+  else if (view === "today") checkin.render(); // its charts are sized from the page, so draw once visible
   else updateInsets(); // the stage was hidden: fit the model now that it has a size
   writeHash();
 }
@@ -254,6 +259,11 @@ const primaryLabels = (e) => e.primary.map((g) => groupById.get(g)?.label ?? g).
 
 function renderMyExercises() {
   const mine = state.mine.map((id) => exerciseById.get(id));
+  $("#my-count").textContent = mine.length ? `(${mine.length})` : "";
+  // nothing to fold yet: show the search; folds again once exercises arrive (e.g. from sync)
+  const fold = $("#my-exercises-section");
+  if (!mine.length) fold.open = fold.dataset.autoOpen = true;
+  else if (fold.dataset.autoOpen) { fold.open = false; delete fold.dataset.autoOpen; }
   $("#my-hint").textContent = mine.length
     ? "Tap exercises to see which muscles they train."
     : "No exercises yet. Search above and tap + to add one.";
@@ -360,7 +370,6 @@ document.querySelectorAll(".tabs [role=tab]").forEach((tab) =>
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tabs [role=tab]").forEach((t) => t.setAttribute("aria-selected", t === tab));
     document.querySelectorAll("[data-tab-body]").forEach((b) => (b.hidden = b.dataset.tabBody !== tab.dataset.tab));
-    if (tab.dataset.tab === "today") checkin.render();
   }),
 );
 
@@ -485,9 +494,9 @@ function writeHash() {
   const params = new URLSearchParams();
   if (state.group) params.set("group", state.group);
   else if (state.exercises.size) params.set("ex", [...state.exercises].join(","));
-  if (viewer.xray) params.set("xray", "1");
+  if (!viewer.xray) params.set("xray", "0"); // x-ray is the default
   if (state.volume) params.set("volume", "1");
-  if (document.body.dataset.view === "exercise") params.set("view", "exercise"); // health is the default
+  if (document.body.dataset.view !== "health") params.set("view", document.body.dataset.view); // health is the default
   const hash = params.toString().replaceAll("%2C", ",");
   history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
 }
@@ -496,9 +505,9 @@ function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
   state.exercises = new Set((params.get("ex") ?? "").split(",").filter((id) => state.mine.includes(id)));
   state.group = groupById.has(params.get("group")) ? params.get("group") : null;
-  if (params.get("xray") === "1") {
-    viewer.setXray(true);
-    $("#toggle-xray").setAttribute("aria-pressed", "true");
+  if (params.get("xray") === "0") {
+    viewer.setXray(false);
+    $("#toggle-xray").setAttribute("aria-pressed", "false");
   }
 }
 
@@ -555,6 +564,7 @@ $("#theme-mode").addEventListener("change", (e) => setThemeMode(e.target.value))
 addEventListener("themechange", () => {
   if (state.volume) showVolume();
   if (document.body.dataset.view === "health") health.render();
+  if (document.body.dataset.view === "today") checkin.render();
 });
 $("#sync-status").addEventListener("click", openSyncDialog);
 $("#sync-cancel").addEventListener("click", () => dialog.close());
@@ -591,11 +601,13 @@ $("#sync-disconnect").addEventListener("click", () => {
 
 const startParams = new URLSearchParams(location.hash.slice(1)); // read before the hash is rewritten
 const startVolume = startParams.get("volume") === "1";
-// health unless the link asks for exercise (also the old "body" view, or a selection on the model)
-const startExercise = ["exercise", "body"].includes(startParams.get("view")) || ["ex", "group", "volume"].some((k) => startParams.has(k));
+// health unless the link asks for another section (the old "body" view and a selection on the model mean exercise)
+const startView = startParams.get("view") === "body" || ["ex", "group", "volume"].some((k) => startParams.has(k))
+  ? "exercise"
+  : VIEWS.includes(startParams.get("view")) ? startParams.get("view") : "health";
 state.mine = profile.doc.myExercises;
 readHash();
-showView(startExercise ? "exercise" : "health");
+showView(startView);
 renderMyExercises();
 health.setJournal(journal.doc);
 if (startVolume) setVolume(true);

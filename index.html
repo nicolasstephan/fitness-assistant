@@ -25,6 +25,7 @@
     <div class="mode-switch" role="tablist" aria-label="Section">
       <button role="tab" data-show="health" aria-selected="true">Health</button>
       <button role="tab" data-show="exercise" aria-selected="false">Exercise</button>
+      <button role="tab" data-show="today" aria-selected="false">Today</button>
     </div>
     <span class="appbar-end">
       <button id="sync-status" class="sync-status" type="button"></button>
@@ -45,8 +46,8 @@
 
       <!-- small display toggles at the side of the model; drag to turn it -->
       <div class="stage-tools" role="toolbar" aria-label="Display">
-        <button id="toggle-xray" aria-pressed="false">X-ray</button>
-        <button id="toggle-skeleton" aria-pressed="true">Skeleton</button>
+        <button id="toggle-xray" aria-pressed="true">X-ray</button>
+        <button id="toggle-skeleton" aria-pressed="false">Skeleton</button>
         <button id="toggle-volume" aria-pressed="false" title="Hard sets per muscle group, last 7 days">Volume</button>
       </div>
 
@@ -64,7 +65,6 @@
         <div class="tabs" role="tablist">
           <button role="tab" data-tab="exercises" aria-selected="true">My exercises</button>
           <button role="tab" data-tab="muscles" aria-selected="false">Muscles</button>
-          <button role="tab" data-tab="today" aria-selected="false">Today</button>
           <button id="panel-expand" class="icon-btn panel-expand" aria-pressed="false" aria-label="Expand panel" title="Expand panel">
             <svg class="i-expand" viewBox="0 0 20 20" aria-hidden="true"><path d="M12 3h5v5M17 3l-6 6M8 17H3v-5M3 17l6-6"/></svg>
             <svg class="i-collapse" viewBox="0 0 20 20" aria-hidden="true"><path d="M16 9h-5V4M11 9l6-6M4 11h5v5M9 11l-6 6"/></svg>
@@ -85,20 +85,23 @@
           <p id="plans-hint" class="hint">Compose a workout from exercises and sets, then start it to tick off sets with a timer running.</p>
           <ul class="list"></ul>
         </section>
-        <div class="section-head"><h3>Exercises</h3></div>
-        <div class="search-row">
-          <input id="exercise-search" type="search" placeholder="Search to add exercises…" autocomplete="off">
-          <button id="clear-selection" class="ghost">Clear</button>
-        </div>
-        <ul id="search-results" class="list results" hidden></ul>
-        <div id="my-exercises">
-          <p class="hint" id="my-hint"></p>
-          <ul id="exercise-list" class="list"></ul>
-        </div>
-        <section id="workout-history" class="workout-history" hidden>
-          <h3>Workout history</h3>
+        <!-- collapsible sections, closed by default -->
+        <details id="my-exercises-section" class="fold">
+          <summary><h3>My exercises <span class="count" id="my-count"></span></h3></summary>
+          <div class="search-row">
+            <input id="exercise-search" type="search" placeholder="Search to add exercises…" autocomplete="off">
+            <button id="clear-selection" class="ghost">Clear</button>
+          </div>
+          <ul id="search-results" class="list results" hidden></ul>
+          <div id="my-exercises">
+            <p class="hint" id="my-hint"></p>
+            <ul id="exercise-list" class="list"></ul>
+          </div>
+        </details>
+        <details id="workout-history" class="fold workout-history" hidden>
+          <summary><h3>Workout history <span class="count"></span></h3></summary>
           <ul class="list"></ul>
-        </section>
+        </details>
       </div>
 
       <div class="tab-body" data-tab-body="muscles" hidden>
@@ -106,54 +109,6 @@
         <div id="group-list"></div>
       </div>
 
-      <div class="tab-body checkin" data-tab-body="today" id="checkin" hidden>
-        <div class="checkin-nav">
-          <button id="checkin-prev" class="icon-btn" aria-label="Previous day">‹</button>
-          <strong id="checkin-date"></strong>
-          <button id="checkin-next" class="icon-btn" aria-label="Next day">›</button>
-        </div>
-        <p class="hint">Saved as you tap. Tap a selected answer again to clear it.</p>
-
-        <div class="checkin-q">
-          <span>Alcohol</span>
-          <div class="seg"><button data-field="alcohol" data-value="false">No</button><button data-field="alcohol" data-value="true">Yes</button></div>
-        </div>
-        <div class="checkin-q">
-          <span>Caffeine after 2 pm</span>
-          <div class="seg"><button data-field="lateCaffeine" data-value="false">No</button><button data-field="lateCaffeine" data-value="true">Yes</button></div>
-        </div>
-        <div class="checkin-q">
-          <span>Stress <small>1 calm · 5 very stressed</small></span>
-          <div class="seg">
-            <button data-field="stress" data-value="1">1</button><button data-field="stress" data-value="2">2</button><button data-field="stress" data-value="3">3</button><button data-field="stress" data-value="4">4</button><button data-field="stress" data-value="5">5</button>
-          </div>
-        </div>
-        <div class="checkin-q">
-          <span>Perceived fitness <small id="fitness-anchor">How well and active do you feel?</small></span>
-          <div class="seg">
-            <button data-field="fitness" data-value="1" title="Brain fog, exhausted">1</button><button data-field="fitness" data-value="2" title="Tired, sluggish">2</button><button data-field="fitness" data-value="3" title="Normal">3</button><button data-field="fitness" data-value="4" title="Good, active">4</button><button data-field="fitness" data-value="5" title="Sharp, motivated">5</button>
-          </div>
-        </div>
-        <div class="checkin-q">
-          <label for="checkin-weight">Body weight <small>kg, morning</small></label>
-          <input id="checkin-weight" type="number" inputmode="decimal" step="0.1" min="20" max="400" maxlength="6" placeholder="–">
-        </div>
-
-        <div class="checkin-supp">
-          <div class="checkin-supp-head">
-            <span>Supplements</span>
-            <button id="supp-edit" class="ghost small" type="button">Edit protocol</button>
-          </div>
-          <p id="supp-hint" class="hint"></p>
-          <div id="supp-today" class="supp-chips"></div>
-        </div>
-
-        <h3 class="checkin-h">Last 30 days</h3>
-        <p id="checkin-alcohol-summary" class="hint"></p>
-        <div class="checkin-chart" hidden><h4>Body weight</h4><div id="checkin-weight-chart"></div></div>
-        <div class="checkin-chart" hidden><h4>Stress</h4><div id="checkin-stress-chart"></div></div>
-        <div class="checkin-chart" hidden><h4>Perceived fitness</h4><div id="checkin-fitness-chart"></div></div>
-      </div>
     </aside>
   </div>
 
@@ -170,6 +125,57 @@
     <p id="health-empty" class="health-empty" hidden></p>
     <section id="health-tiles" class="tiles"></section>
     <div id="health-cards"></div>
+  </main>
+
+  <main id="checkin" class="today checkin" hidden>
+    <div class="today-inner">
+          <div class="checkin-nav">
+            <button id="checkin-prev" class="icon-btn" aria-label="Previous day">‹</button>
+            <strong id="checkin-date"></strong>
+            <button id="checkin-next" class="icon-btn" aria-label="Next day">›</button>
+          </div>
+          <p class="hint">Saved as you tap. Tap a selected answer again to clear it.</p>
+  
+          <div class="checkin-q">
+            <span>Alcohol</span>
+            <div class="seg"><button data-field="alcohol" data-value="false">No</button><button data-field="alcohol" data-value="true">Yes</button></div>
+          </div>
+          <div class="checkin-q">
+            <span>Caffeine after 2 pm</span>
+            <div class="seg"><button data-field="lateCaffeine" data-value="false">No</button><button data-field="lateCaffeine" data-value="true">Yes</button></div>
+          </div>
+          <div class="checkin-q">
+            <span>Stress <small>1 calm · 5 very stressed</small></span>
+            <div class="seg">
+              <button data-field="stress" data-value="1">1</button><button data-field="stress" data-value="2">2</button><button data-field="stress" data-value="3">3</button><button data-field="stress" data-value="4">4</button><button data-field="stress" data-value="5">5</button>
+            </div>
+          </div>
+          <div class="checkin-q">
+            <span>Perceived fitness <small id="fitness-anchor">How well and active do you feel?</small></span>
+            <div class="seg">
+              <button data-field="fitness" data-value="1" title="Brain fog, exhausted">1</button><button data-field="fitness" data-value="2" title="Tired, sluggish">2</button><button data-field="fitness" data-value="3" title="Normal">3</button><button data-field="fitness" data-value="4" title="Good, active">4</button><button data-field="fitness" data-value="5" title="Sharp, motivated">5</button>
+            </div>
+          </div>
+          <div class="checkin-q">
+            <label for="checkin-weight">Body weight <small>kg, morning</small></label>
+            <input id="checkin-weight" type="number" inputmode="decimal" step="0.1" min="20" max="400" maxlength="6" placeholder="–">
+          </div>
+  
+          <div class="checkin-supp">
+            <div class="checkin-supp-head">
+              <span>Supplements</span>
+              <button id="supp-edit" class="ghost small" type="button">Edit protocol</button>
+            </div>
+            <p id="supp-hint" class="hint"></p>
+            <div id="supp-today" class="supp-chips"></div>
+          </div>
+  
+          <h3 class="checkin-h">Last 30 days</h3>
+          <p id="checkin-alcohol-summary" class="hint"></p>
+          <div class="checkin-chart" hidden><h4>Body weight</h4><div id="checkin-weight-chart"></div></div>
+          <div class="checkin-chart" hidden><h4>Stress</h4><div id="checkin-stress-chart"></div></div>
+          <div class="checkin-chart" hidden><h4>Perceived fitness</h4><div id="checkin-fitness-chart"></div></div>
+    </div>
   </main>
 
   <dialog id="log-dialog" class="log-dialog">
