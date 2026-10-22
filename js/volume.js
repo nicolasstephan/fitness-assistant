@@ -42,6 +42,28 @@ export function workoutMuscles(log, workoutId, exerciseById) {
   return { sets: setsByGroup(sessions, exerciseById), primary, secondary, totalSets: sessions.reduce((a, s) => a + s.sets.length, 0) };
 }
 
+/**
+ * Which of the plans to do next, from the last 7 days' volume. A plan scores by how far its main muscle
+ * groups are below the weekly target (average gap, 0..1); groups trained today or yesterday still recover,
+ * so each of them lowers the score. Returns { plan, score, gaps: [{ g, sets }], fresh: [g] } or null.
+ * score 0 means every main group of every plan has reached the target.
+ */
+export function suggestNextPlan(log, exerciseById, today) {
+  const week = weeklySets(log, exerciseById, today);
+  const recent = weeklySets(log, exerciseById, today, 2);
+  const target = VOLUME_TARGET[0];
+  const scored = log.plans.map((plan) => {
+    const main = new Set(plan.items.flatMap((it) => exerciseById.get(it.exercise)?.primary ?? []));
+    if (!main.size) return null;
+    const groups = [...main].map((g) => ({ g, sets: week.get(g) ?? 0 }));
+    const fresh = [...main].filter((g) => (recent.get(g) ?? 0) >= 1);
+    let score = groups.reduce((a, x) => a + Math.max(0, target - x.sets), 0) / (main.size * target);
+    score *= 1 - (0.5 * fresh.length) / main.size;
+    return { plan, score, gaps: groups.filter((x) => x.sets < target).sort((a, b) => a.sets - b.sets), fresh };
+  });
+  return scored.filter(Boolean).sort((a, b) => b.score - a.score)[0] ?? null;
+}
+
 /** Ordinal bins; colors come from --vol-1..4 (validated per light/dark mode). */
 export const VOLUME_BINS = [
   { min: 0.5, label: "1–4 sets", token: "--vol-1" },

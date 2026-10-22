@@ -413,11 +413,16 @@ dialog select { padding: 8px 6px; border: 1px solid var(--border); border-radius
 .fold[open] > summary::before { rotate: 90deg; }
 .fold > summary h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .fold > summary:hover h3 { color: var(--text); }
-.fold .count { font-weight: 400; }
 .fold[open] { padding-bottom: 8px; }
 .workout-history small.when { color: var(--text); opacity: 0.75; }
 .workout-plans-head span { display: flex; gap: 6px; }
 .workout-plans .list li { cursor: pointer; }
+/* suggested next plan: a quiet grayscale card above the list; tap = green preview like the plan row */
+.next-plan { display: flex; flex-direction: column; gap: 2px; margin: 8px 0 6px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.next-plan:hover { background: var(--chip); }
+.next-plan small { color: var(--muted); font-size: 12px; }
+.next-plan .next-label { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.next-plan.plan-active { background: color-mix(in srgb, var(--plan-1) 14%, transparent); }
 /* tapped plan: its muscles are green on the model (data color), the row tinted to match */
 .workout-plans .list li.plan-active { background: color-mix(in srgb, var(--plan-1) 14%, transparent); }
 .plan-checklist { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }

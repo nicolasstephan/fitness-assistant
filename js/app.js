@@ -314,7 +314,6 @@ const primaryLabels = (e) => e.primary.map((g) => groupById.get(g)?.label ?? g).
 
 function renderMyExercises() {
   const mine = state.mine.map((id) => exerciseById.get(id));
-  $("#my-count").textContent = mine.length ? `(${mine.length})` : "";
   // nothing to fold yet: show the search; folds again once exercises arrive (e.g. from sync)
   const fold = $("#my-exercises-section");
   if (!mine.length) fold.open = fold.dataset.autoOpen = true;

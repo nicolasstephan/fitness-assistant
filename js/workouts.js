@@ -2,6 +2,8 @@
 // a set checklist while running, and the muscles a workout trained.
 // Finished workouts are matched with tracker workouts (WHOOP now, Polar later) by overlapping time.
 import { activeWorkout, describeSets, localNow, newId, normalizeLog } from "./training-log.js";
+import { suggestNextPlan, VOLUME_TARGET } from "./volume.js";
+import { groupById } from "./data/muscle-groups.js";
 
 const MIN = 60000;
 const toMs = (local) => Date.parse(`${local}:00Z`); // local wall-clock times, compared consistently as "UTC"
@@ -330,24 +332,49 @@ export class WorkoutView {
     const box = this.root.querySelector("#workout-plans");
     box.hidden = !!running;
     if (running) return;
+    this.renderSuggestion(log, box);
     const list = box.querySelector("ul");
     list.replaceChildren(
       ...log.plans.map((p) => el("li", { className: p.id === this.selectedPlan ? "plan-active" : "", dataset: { selectPlan: p.id }, title: "Show the muscles this workout trains" },
         el("div", { className: "li-text" },
           el("span", { textContent: p.name }),
-          // one line per exercise: a joined line wrapped mid-exercise ("Pull-up 3, 2, / 2")
-          ...p.items.map((it) => el("small", { textContent: `${this.exerciseById.get(it.exercise)?.name ?? it.exercise} ${describePlanItem(it)}` }))),
+          // exercise names only, one per line; sets and reps show once the workout is opened (Start / Edit)
+          ...p.items.map((it) => el("small", { textContent: this.exerciseById.get(it.exercise)?.name ?? it.exercise }))),
         el("button", { type: "button", className: "ghost small", dataset: { editPlan: p.id }, textContent: "Edit" }),
         el("button", { type: "button", className: "primary-btn small", dataset: { startPlan: p.id }, textContent: "▶ Start" }))),
     );
     box.querySelector("#plans-hint").hidden = log.plans.length > 0;
   }
 
+  /** "Next" card above the plans: the plan that fills the biggest volume gaps (see suggestNextPlan). */
+  renderSuggestion(log, box) {
+    let card = box.querySelector(".next-plan");
+    if (!card) {
+      card = el("div", { className: "next-plan" });
+      box.querySelector("ul").before(card);
+    }
+    const s = log.plans.length >= 2 ? suggestNextPlan(log, this.exerciseById, localNow().slice(0, 10)) : null;
+    card.hidden = !s;
+    if (!s) return;
+    const label = (g) => groupById.get(g)?.label ?? g;
+    const fmt = (n) => (Number.isInteger(n) ? `${n}` : n.toFixed(1));
+    const why = s.score === 0
+      ? `Every muscle group in your plans has reached ${VOLUME_TARGET[0]} sets this week.`
+      : `Below ${VOLUME_TARGET[0]} sets this week: ${s.gaps.slice(0, 3).map((x) => `${label(x.g)} ${fmt(x.sets)}`).join(", ")}${s.gaps.length > 3 ? " …" : ""}`;
+    card.dataset.selectPlan = s.plan.id; // tap: preview its muscles, like tapping the plan
+    card.title = "Show the muscles this workout trains";
+    card.replaceChildren(
+      el("small", { className: "next-label", textContent: "Next" }),
+      el("strong", { textContent: s.plan.name }),
+      el("small", { textContent: why }),
+      ...(s.fresh.length ? [el("small", { textContent: `Trained in the last 2 days: ${s.fresh.map(label).join(", ")}` })] : []),
+    );
+  }
+
   renderHistory(log) {
     const section = this.root.querySelector("#workout-history");
     const finished = log.workouts.filter((w) => w.end).slice(-10).reverse();
     section.hidden = !finished.length;
-    section.querySelector(".count").textContent = finished.length ? `(${finished.length})` : "";
     const tracker = this.getTracker();
     section.querySelector("ul").replaceChildren(
       ...finished.map((w) => {
