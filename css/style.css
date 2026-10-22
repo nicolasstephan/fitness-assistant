@@ -255,6 +255,13 @@ body { display: flex; flex-direction: column; height: 100dvh; }
 .icon-btn.add { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .icon-btn.add:disabled { background: var(--chip); border-color: var(--border); color: var(--muted); cursor: default; }
 
+/* Volume tab: sets per muscle group, swatch in the heatmap color */
+.vol-list li { cursor: default; padding: 6px 10px; }
+.vol-list li:hover { background: none; }
+.vol-list .swatch { flex: none; width: 12px; height: 12px; border-radius: 3px; }
+.vol-n { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+.vol-h { margin: 14px 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+#group-list .list li { padding: 7px 10px; }
 #group-list h3 { margin: 14px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 #group-list h3:first-child { margin-top: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -23,22 +23,26 @@ const state = {
   mine: [], // ids of the user's exercises, in the order added
   exercises: new Set(), // selected (highlighted) exercise ids
   group: null, // selected muscle group id (muscles tab)
-  volume: false, // weekly-volume heatmap on the model
+  tab: "exercises", // panel tab, sets the model's display: "volume" | "exercises" (Training) | "muscles"
   workoutFocus: null, // workout id whose trained muscles are shown on the model
 };
 
 // ---------- highlighting
 
+/**
+ * The model shows what the selected panel tab is about: volume = weekly-sets heatmap,
+ * exercises (Training) = selected exercises or workout in red / orange, muscles = the selected group.
+ */
 function refresh() {
   const primary = new Set();
   const secondary = new Set();
-  const focus = state.workoutFocus && workoutMuscles(trainingLog.doc, state.workoutFocus, exerciseById);
+  const focus = state.tab === "exercises" && state.workoutFocus && workoutMuscles(trainingLog.doc, state.workoutFocus, exerciseById);
   if (focus) {
     focus.primary.forEach((g) => primary.add(g));
     focus.secondary.forEach((g) => secondary.add(g));
-  } else if (state.group) {
-    primary.add(state.group);
-  } else {
+  } else if (state.tab === "muscles") {
+    if (state.group) primary.add(state.group);
+  } else if (state.tab === "exercises") {
     for (const ex of EXERCISES.filter((e) => state.exercises.has(e.id))) {
       ex.primary.forEach((g) => primary.add(g));
       ex.secondary.forEach((g) => secondary.add(g));
@@ -50,20 +54,31 @@ function refresh() {
   writeHash();
 
   document.querySelectorAll("#exercise-list li").forEach((li) => li.classList.toggle("active", state.exercises.has(li.dataset.id)));
-  document.querySelectorAll("#group-list .chip").forEach((c) => c.classList.toggle("active", c.dataset.id === state.group));
-  if (state.volume) showVolume();
-  else if (focus) showWorkoutSummary(focus);
-  else showSummary(primary, secondary);
+  document.querySelectorAll("#group-list li").forEach((li) => li.classList.toggle("active", li.dataset.id === state.group));
+  $("#legend-highlight").hidden = state.tab === "volume";
+  $("#legend-volume").hidden = state.tab !== "volume";
+  if (state.tab === "volume") showVolume();
+  else {
+    viewer.setGroupColors(null);
+    if (focus) showWorkoutSummary(focus);
+    else showSummary(primary, secondary);
+  }
+}
+
+/** Select a panel tab; the model's display follows it (see refresh). */
+function selectTab(name) {
+  state.tab = name;
+  document.querySelectorAll(".tabs [role=tab]").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === name)));
+  document.querySelectorAll("[data-tab-body]").forEach((b) => (b.hidden = b.dataset.tabBody !== name));
+  viewer.setSelected(null);
+  refresh();
 }
 
 /** Show which muscles a workout trained: highlight on the model + sets per muscle group. */
 function showWorkoutMuscles(workoutId) {
-  setVolume(false);
   state.exercises.clear();
-  state.group = null;
   state.workoutFocus = workoutId;
-  viewer.setSelected(null);
-  refresh();
+  selectTab("exercises");
 }
 
 function showWorkoutSummary(focus) {
@@ -89,13 +104,13 @@ function showWorkoutSummary(focus) {
 
 function showSummary(primary, secondary) {
   const info = $("#info");
-  if (state.group) {
+  if (state.tab === "muscles" && state.group) {
     const g = groupById.get(state.group);
     const trainedBy = EXERCISES.filter((e) => e.primary.includes(g.id) || e.secondary.includes(g.id));
     info.innerHTML = `<strong>${g.label}</strong>
       <div class="muted">Trained by: ${trainedBy.map((e) => e.name).join(", ") || "—"}</div>`;
     info.hidden = false;
-  } else if (state.exercises.size) {
+  } else if (state.tab === "exercises" && state.exercises.size) {
     const names = (set) => [...set].map((id) => groupById.get(id)?.label ?? id).join(", ");
     info.innerHTML = `<div><span class="dot primary"></span>${names(primary)}</div>
       ${secondary.size ? `<div class="muted"><span class="dot secondary"></span>${names(secondary)}</div>` : ""}`;
@@ -178,8 +193,7 @@ profile.onChange = (doc) => {
 };
 trainingLog.onChange = () => {
   renderMyExercises();
-  workoutView.render();
-  if (state.volume) showVolume();
+  workoutView.render(); // renderMyExercises -> refresh() already redraws the volume heatmap
 };
 journal.onChange = (doc) => {
   checkin.render();
@@ -324,10 +338,8 @@ $("#exercise-list").addEventListener("click", (e) => {
   const li = e.target.closest("li");
   if (!li) return;
   const id = li.dataset.id;
-  setVolume(false);
   state.workoutFocus = null;
   state.exercises.has(id) ? state.exercises.delete(id) : state.exercises.add(id);
-  state.group = null;
   viewer.setSelected(null);
   refresh();
 });
@@ -340,25 +352,23 @@ $("#exercise-search").addEventListener("keydown", (e) => {
 });
 $("#clear-selection").addEventListener("click", () => {
   state.workoutFocus = null;
-  state.exercises.clear();
-  state.group = null;
+  state.exercises.clear(); // Training's selection only; the Muscles tab keeps its own
   viewer.setSelected(null);
   refresh();
 });
 
 // ---------- muscles tab
 
+// a plain list per body region; tap a group to show it on the model, tap again to clear
 $("#group-list").innerHTML = REGIONS.map((r) => `
   <h3>${r.label}</h3>
-  <div class="chips">${MUSCLE_GROUPS.filter((g) => g.region === r.id)
-    .map((g) => `<button class="chip" data-id="${g.id}">${g.label}</button>`).join("")}</div>`).join("");
+  <ul class="list">${MUSCLE_GROUPS.filter((g) => g.region === r.id)
+    .map((g) => `<li data-id="${g.id}"><span class="li-text">${g.label}</span></li>`).join("")}</ul>`).join("");
 
 $("#group-list").addEventListener("click", (e) => {
-  const chip = e.target.closest(".chip");
-  if (!chip) return;
-  setVolume(false);
-  state.workoutFocus = null;
-  state.group = state.group === chip.dataset.id ? null : chip.dataset.id;
+  const li = e.target.closest("li[data-id]");
+  if (!li) return;
+  state.group = state.group === li.dataset.id ? null : li.dataset.id;
   viewer.setSelected(null);
   refresh();
 });
@@ -366,12 +376,7 @@ $("#group-list").addEventListener("click", (e) => {
 // ---------- tabs
 
 // the panel's own tabs only; the Health / Exercise switch in the app bar is a tablist too
-document.querySelectorAll(".tabs [role=tab]").forEach((tab) =>
-  tab.addEventListener("click", () => {
-    document.querySelectorAll(".tabs [role=tab]").forEach((t) => t.setAttribute("aria-selected", t === tab));
-    document.querySelectorAll("[data-tab-body]").forEach((b) => (b.hidden = b.dataset.tabBody !== tab.dataset.tab));
-  }),
-);
+document.querySelectorAll(".tabs [role=tab]").forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab)));
 
 // ---------- toolbar
 
@@ -406,23 +411,8 @@ toggle($("#toggle-xray"), (on) => {
   writeHash();
 });
 toggle($("#toggle-skeleton"), (on) => viewer.setSkeletonVisible(on));
-$("#toggle-volume").addEventListener("click", () => setVolume(!state.volume));
 
-// ---------- weekly volume: muscles colored by hard sets in the last 7 days
-
-function setVolume(on) {
-  if (state.volume === on) return;
-  state.volume = on;
-  $("#toggle-volume").setAttribute("aria-pressed", on);
-  $("#legend-highlight").hidden = on;
-  $("#legend-volume").hidden = !on;
-  if (on) showVolume();
-  else {
-    viewer.setGroupColors(null);
-    refresh();
-  }
-  writeHash();
-}
+// ---------- weekly volume (Volume tab): muscles colored by hard sets in the last 7 days
 
 function showVolume() {
   const sets = weeklySets(trainingLog.doc, exerciseById, localToday());
@@ -444,32 +434,33 @@ function showVolume() {
     legend.appendChild(item);
   }
 
-  // summary: trained groups, and groups your exercises target that are below 10 sets
+  // summary in the tab (not over the model): sets per trained group, and targeted groups below 10 sets
   const fmt = (n) => (Number.isInteger(n) ? `${n}` : n.toFixed(1));
   const trained = [...sets].filter(([, n]) => n >= 0.5).sort((a, b) => b[1] - a[1]);
   const targeted = new Set(state.mine.flatMap((id) => exerciseById.get(id).primary));
   const below = [...targeted].filter((g) => (sets.get(g) ?? 0) < VOLUME_TARGET[0]);
-  const info = $("#info");
-  info.replaceChildren();
-  const head = document.createElement("strong");
-  head.textContent = trained.length ? "Hard sets, last 7 days" : "No sets logged in the last 7 days";
-  info.appendChild(head);
-  if (trained.length) {
-    const line = document.createElement("div");
-    line.textContent = trained.map(([g, n]) => `${groupById.get(g)?.label ?? g} ${fmt(n)}`).join(" · ");
-    info.appendChild(line);
-  }
+  const colors = volumeColors(sets);
+  const el = (tag, props = {}, ...kids) => {
+    const n = Object.assign(document.createElement(tag), props);
+    n.append(...kids);
+    return n;
+  };
+  const box = $("#volume-summary");
+  box.replaceChildren(
+    el("p", { className: "hint", textContent: trained.length
+      ? "Hard sets per muscle group, last 7 days. Secondary muscles count half a set; target 10–20 per week."
+      : "No sets logged in the last 7 days." }),
+    el("ul", { className: "list vol-list" }, ...trained.map(([g, n]) => {
+      const sw = el("i", { className: "swatch" });
+      sw.style.background = colors.get(g) ?? "var(--chip)";
+      return el("li", {}, sw, el("span", { className: "li-text", textContent: groupById.get(g)?.label ?? g }), el("span", { className: "vol-n", textContent: `${fmt(n)} sets` }));
+    })),
+  );
   if (below.length) {
-    const line = document.createElement("div");
-    line.className = "muted";
-    line.textContent = `Below ${VOLUME_TARGET[0]} sets: ${below.map((g) => groupById.get(g)?.label ?? g).join(", ")}`;
-    info.appendChild(line);
+    box.append(el("h3", { className: "vol-h", textContent: `Below ${VOLUME_TARGET[0]} sets` }),
+      el("p", { className: "hint", textContent: below.map((g) => groupById.get(g)?.label ?? g).join(", ") }));
   }
-  const note = document.createElement("div");
-  note.className = "muted";
-  note.textContent = "Secondary muscles count half a set. Target: 10–20 sets per muscle group per week.";
-  info.appendChild(note);
-  info.hidden = false;
+  $("#info").hidden = true;
 }
 
 // ---------- picking a muscle on the model
@@ -492,10 +483,10 @@ viewer.onPick = (mesh) => {
 
 function writeHash() {
   const params = new URLSearchParams();
-  if (state.group) params.set("group", state.group);
-  else if (state.exercises.size) params.set("ex", [...state.exercises].join(","));
+  if (state.tab === "muscles" && state.group) params.set("group", state.group);
+  else if (state.tab === "exercises" && state.exercises.size) params.set("ex", [...state.exercises].join(","));
   if (!viewer.xray) params.set("xray", "0"); // x-ray is the default
-  if (state.volume) params.set("volume", "1");
+  if (state.tab !== "exercises") params.set("tab", state.tab); // Training is the default tab
   if (document.body.dataset.view !== "health") params.set("view", document.body.dataset.view); // health is the default
   const hash = params.toString().replaceAll("%2C", ",");
   history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
@@ -562,7 +553,7 @@ $("#sync-open").addEventListener("click", openSyncDialog);
 $("#theme-mode").value = getThemeMode();
 $("#theme-mode").addEventListener("change", (e) => setThemeMode(e.target.value));
 addEventListener("themechange", () => {
-  if (state.volume) showVolume();
+  if (state.tab === "volume") showVolume();
   if (document.body.dataset.view === "health") health.render();
   if (document.body.dataset.view === "today") checkin.render();
 });
@@ -600,17 +591,19 @@ $("#sync-disconnect").addEventListener("click", () => {
 // ---------- boot
 
 const startParams = new URLSearchParams(location.hash.slice(1)); // read before the hash is rewritten
-const startVolume = startParams.get("volume") === "1";
+// panel tab from the link (older links: #volume=1 meant the heatmap, #group= the muscles list)
+const startTab = ["volume", "exercises", "muscles"].includes(startParams.get("tab")) ? startParams.get("tab")
+  : startParams.get("volume") === "1" ? "volume" : startParams.has("group") ? "muscles" : "exercises";
 // health unless the link asks for another section (the old "body" view and a selection on the model mean exercise)
-const startView = startParams.get("view") === "body" || ["ex", "group", "volume"].some((k) => startParams.has(k))
+const startView = startParams.get("view") === "body" || ["ex", "group", "volume", "tab"].some((k) => startParams.has(k))
   ? "exercise"
   : VIEWS.includes(startParams.get("view")) ? startParams.get("view") : "health";
 state.mine = profile.doc.myExercises;
 readHash();
+selectTab(startTab);
 showView(startView);
 renderMyExercises();
 health.setJournal(journal.doc);
-if (startVolume) setVolume(true);
 const cachedHealth = readLocal(HEALTH_CACHE_KEY, null);
 if (cachedHealth) health.setData(cachedHealth);
 workoutView.render(); // after the health cache, so tracker matches show right away
