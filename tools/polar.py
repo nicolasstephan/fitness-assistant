@@ -1,17 +1,20 @@
 """Polar AccessLink (API v3) client for the Fitness Assistant.
 
-    python tools/polar.py setup            # once: store client id/secret, log in via the browser, register the user
-    python tools/polar.py fetch            # download everything the API offers into data/polar/raw/ and merge into history.json
-    python tools/polar.py build            # history.json -> ../fitness-data/health/polar.json (same shape as whoop.json)
-    python tools/polar.py sync             # fetch + build + commit/push the data repo (the scheduled task runs this)
+    python tools/polar.py setup            # once (any machine): client id/secret, Polar login in the browser, register the user
+    python tools/polar.py sync             # fetch + merge + build + commit/push the data repo (the scheduled task runs this)
+    python tools/polar.py fetch            # only download what the API offers into data/polar/raw/ (local cache)
+    python tools/polar.py build            # only rebuild health/polar.json from the history
 
-Credentials, raw downloads and the merged history live in data/polar/ (data/ is git-ignored; personal data never goes in this repo).
-Client registration: https://admin.polaraccesslink.com (log in with the Polar Flow account), redirect URL
-http://localhost:5000/oauth2_callback. The access token does not expire unless revoked.
+Where things live (private data repo `fitness-data`, cloned next to this repo as ../fitness-data):
+    imports/polar/credentials.json         client id/secret + access token (shared by all machines; never in this public repo)
+    imports/polar/history/YYYY-MM.json     every day/exercise ever fetched, per month (the API forgets after 28-30 days)
+    health/polar.json                      what the app reads (same shape as health/whoop.json)
+Local only: data/polar/raw/ (last download), data/polar/sync.log.
 
-Lookback windows (API limits): sleep, Nightly Recharge, activities, SleepWise, biosensing 28 days;
-exercises 30 days; cardio load 28 days; activities up to 365 days back in 28-day slices.
-Only standard library, so it runs with any Python 3.10+.
+Several machines may sync: each one pulls first, merges its download into the history (union by day,
+newer download wins), and on a rejected push resets its commit, pulls again and redoes the merge.
+Client registration: https://admin.polaraccesslink.com, redirect URL http://localhost:5000/oauth2_callback.
+The access token does not expire unless revoked. Only standard library (Python 3.10+).
 """
 import base64
 import json
@@ -28,12 +31,14 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DIR = ROOT / "data" / "polar"
-CRED = DIR / "credentials.json"
-RAW = DIR / "raw"
-HISTORY = DIR / "history.json"
+LOCAL = ROOT / "data" / "polar"
+RAW = LOCAL / "raw"
 DATA_REPO = ROOT.parent / "fitness-data"  # local clone of the private data repo
+IMPORTS = DATA_REPO / "imports" / "polar"
+CRED = IMPORTS / "credentials.json"
+HISTORY = IMPORTS / "history"
 OUT = DATA_REPO / "health" / "polar.json"
+TRACKED = ["imports/polar", "health/polar.json"]  # the only paths this script commits
 
 AUTH_URL = "https://flow.polar.com/oauth2/authorization"
 TOKEN_URL = "https://polarremote.com/v2/oauth2/token"
@@ -41,14 +46,18 @@ API = "https://www.polaraccesslink.com"
 REDIRECT = "http://localhost:5000/oauth2_callback"
 
 
+def git(*args, check=True):
+    return subprocess.run(["git", "-C", str(DATA_REPO), *args], check=check, capture_output=True, text=True)
+
+
 def load_cred():
     if not CRED.exists():
-        sys.exit("No credentials yet: run  python tools/polar.py setup")
+        sys.exit(f"No Polar credentials in {CRED}: run  python tools/polar.py setup")
     return json.loads(CRED.read_text(encoding="utf-8"))
 
 
 def save_cred(c):
-    DIR.mkdir(parents=True, exist_ok=True)
+    IMPORTS.mkdir(parents=True, exist_ok=True)
     CRED.write_text(json.dumps(c, indent=2), encoding="utf-8")
 
 
@@ -109,6 +118,7 @@ def wait_for_code(state):
 
 
 def setup():
+    git("pull", "-q", "--rebase", "--autostash", check=False)
     c = json.loads(CRED.read_text(encoding="utf-8")) if CRED.exists() else {}
     if not c.get("client_id"):
         c["client_id"] = input("Client ID: ").strip()
@@ -136,7 +146,8 @@ def setup():
         print("User already registered (fine).")
     else:
         sys.exit(f"User registration failed ({status}): {body}  (403 = accept the consents in Polar Flow)")
-    print(f"Saved to {CRED}")
+    commit_and_push("Polar credentials")
+    print(f"Saved to {CRED} (shared via the fitness-data repo)")
 
 
 def fetch():
@@ -150,8 +161,12 @@ def fetch():
         status, body = request("GET", url, token=tok)
         if status == 200:
             (RAW / f"{name}.json").write_text(json.dumps(body, indent=1, ensure_ascii=False), encoding="utf-8")
+        elif status == 204:
+            (RAW / f"{name}.json").unlink(missing_ok=True)
         n = len(body) if isinstance(body, list) else (len(next(iter(body.values()))) if isinstance(body, dict) and len(body) == 1 and isinstance(next(iter(body.values())), list) else "")
         print(f"{name:28} {status}  {n if status == 200 else str(body)[:80]}")
+        if status in (401, 403):
+            sys.exit("Polar rejected the token: run  python tools/polar.py setup  again")
         return body if status == 200 else None
 
     get("physical-info", "/v3/users/physical-info")
@@ -176,12 +191,11 @@ def fetch():
         end = start - timedelta(days=1)
     (RAW / "activities.json").write_text(json.dumps(acts, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{'activities (365 d)':28} {len(acts)} days")
+    # continuous HR stays local (raw only): ~288 samples a day would bloat the data repo
     get("continuous-hr", "/v3/users/continuous-heart-rate", **{"from": str(today - timedelta(days=27)), "to": str(today)})
-    print(f"Raw data in {RAW}")
-    merge_history()
 
 
-# ---------- history: the API forgets after 28-30 days, so every fetch is merged into one file
+# ---------- history: imports/polar/history/YYYY-MM.json, merged from every fetch on every machine
 
 def list_of(body, key):
     if isinstance(body, list):
@@ -194,27 +208,59 @@ def read_raw(name):
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
+STREAMS = {
+    # name: (raw file, list key, record -> date key, record -> id)
+    "sleep": ("sleep", "nights", lambda r: r["date"], lambda r: r["date"]),
+    "recharge": ("nightly-recharge", "recharges", lambda r: r["date"], lambda r: r["date"]),
+    "activities": ("activities", "activities", lambda r: r["start_time"][:10], lambda r: r["start_time"][:10]),
+    "cardioLoad": ("cardio-load", "cardio_load", lambda r: r["date"], lambda r: r["date"]),
+    "exercises": ("exercises", "exercises", lambda r: r["start_time"][:10], lambda r: r["id"]),
+}
+
+
+def load_history():
+    h = {}
+    for f in sorted(HISTORY.glob("*.json")):
+        month = json.loads(f.read_text(encoding="utf-8"))
+        for name, recs in month.items():
+            if isinstance(recs, dict):
+                h.setdefault(name, {}).update(recs)
+    info = IMPORTS / "physical-info.json"
+    if info.exists():
+        h["physicalInfo"] = json.loads(info.read_text(encoding="utf-8"))
+    return h
+
+
 def merge_history():
-    h = json.loads(HISTORY.read_text(encoding="utf-8")) if HISTORY.exists() else {}
-    streams = {
-        "sleep": (list_of(read_raw("sleep"), "nights"), lambda r: r["date"]),
-        "recharge": (list_of(read_raw("nightly-recharge"), "recharges"), lambda r: r["date"]),
-        "activities": (list_of(read_raw("activities"), "activities"), lambda r: r["start_time"][:10]),
-        "cardioLoad": ([r for r in list_of(read_raw("cardio-load"), "cardio_load") if r.get("cardio_load", -1) >= 0],
-                       lambda r: r["date"]),
-        "heartRate": (list_of(read_raw("continuous-hr"), "heart_rates"), lambda r: r["date"]),
-        "exercises": (list_of(read_raw("exercises"), "exercises"), lambda r: r["id"]),
-    }
-    for name, (rows, key) in streams.items():
-        h.setdefault(name, {}).update({key(r): r for r in rows})  # newer fetch wins (today's partial day gets completed)
+    """Merge the last download (data/polar/raw) into the monthly history files; write only months that change."""
+    HISTORY.mkdir(parents=True, exist_ok=True)
+    months = {}
+    for name, (raw, key, day_of, id_of) in STREAMS.items():
+        rows = list_of(read_raw(raw), key)
+        if name == "cardioLoad":
+            rows = [r for r in rows if r.get("cardio_load", -1) >= 0]  # -1 = not available yet
+        for r in rows:
+            months.setdefault(day_of(r)[:7], {}).setdefault(name, {})[id_of(r)] = r
+    changed = 0
+    for month, streams in months.items():
+        f = HISTORY / f"{month}.json"
+        old = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+        new = json.loads(json.dumps(old))
+        for name, recs in streams.items():
+            new.setdefault(name, {}).update(recs)  # newer download wins (today's partial day gets completed)
+        if new != old:
+            f.write_text(json.dumps(new, ensure_ascii=False, indent=0, sort_keys=True), encoding="utf-8")
+            changed += 1
     info = read_raw("physical-info")
     if info:
-        h["physicalInfo"] = info
-    HISTORY.write_text(json.dumps(h, ensure_ascii=False), encoding="utf-8")
-    print("history:", ", ".join(f"{k} {len(v)}" for k, v in h.items() if isinstance(v, dict) and k != "physicalInfo"))
+        p = IMPORTS / "physical-info.json"
+        if not p.exists() or json.loads(p.read_text(encoding="utf-8")) != info:
+            p.write_text(json.dumps(info, indent=1), encoding="utf-8")
+    h = load_history()
+    print(f"history: {changed} month file(s) changed;", ", ".join(f"{k} {len(v)}" for k, v in h.items() if k != "physicalInfo"))
 
 
-# ---------- build: history -> health/polar.json in the private data repo (same shape as whoop.json)
+# ---------- build: history -> health/polar.json (same shape as whoop.json)
 
 def minutes(iso):
     """ISO-8601 duration ('PT1H23M45.5S') -> minutes."""
@@ -226,7 +272,7 @@ def minutes(iso):
 
 
 def build():
-    h = json.loads(HISTORY.read_text(encoding="utf-8"))
+    h = load_history()
     days = {}
 
     def day(key):
@@ -269,50 +315,96 @@ def build():
                 zones[i] = round(100 * (minutes(z.get("in-zone")) or 0) / dur, 1)
         hr = e.get("heart_rate") or {}
         sport = (e.get("detailed_sport_info") or e.get("sport") or "Other").replace("_", " ").capitalize()
-        start = e.get("start_time", "")[:16]
         workouts.append({
-            "start": start, "end": None, "durationMin": dur, "activity": sport, "strain": None,
+            "start": e.get("start_time", "")[:16], "end": None, "durationMin": dur, "activity": sport, "strain": None,
             "kcal": e.get("calories"), "maxHr": hr.get("maximum"), "avgHr": hr.get("average"),
             "zones": zones, "cardioLoad": e.get("cardio_load") or e.get("training_load"),
         })
     workouts.sort(key=lambda w: w["start"])
     ordered = sorted(days.values(), key=lambda d: d["date"])
     if not ordered:
-        sys.exit("No Polar days yet.")
+        print("No Polar days yet.")
+        return
     doc = {
-        "version": 1, "source": "polar",
-        "importedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "version": 1, "source": "polar", "importedAt": None,
         "range": {"from": ordered[0]["date"], "to": ordered[-1]["date"]},
         "days": ordered, "workouts": workouts,
     }
+    # keep the old timestamp when nothing changed, so an idle sync makes no commit
+    old = json.loads(OUT.read_text(encoding="utf-8")) if OUT.exists() else {}
+    same = {**old, "importedAt": None} == doc
+    doc["importedAt"] = old.get("importedAt") if same else datetime.now(timezone.utc).isoformat(timespec="seconds")
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(doc, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
-    print(f"{len(ordered)} days ({doc['range']['from']} .. {doc['range']['to']}), {len(workouts)} workouts -> {OUT}")
+    print(f"{len(ordered)} days ({doc['range']['from']} .. {doc['range']['to']}), {len(workouts)} workouts"
+          f"{' (unchanged)' if same else ''} -> {OUT}")
 
 
-def push():
-    git = ["git", "-C", str(DATA_REPO)]
-    subprocess.run(git + ["pull", "-q", "--rebase", "--autostash"], check=False)
-    subprocess.run(git + ["add", "health/polar.json"], check=True)
-    if subprocess.run(git + ["diff", "--cached", "--quiet"]).returncode == 0:
-        print("data repo: no change")
-        return
-    subprocess.run(git + ["commit", "-q", "-m", f"Polar import {date.today()}"], check=True)
-    subprocess.run(git + ["push", "-q"], check=True)
-    print("data repo: pushed")
+# ---------- git: commit only our paths; on a rejected push undo, pull, redo
+
+def commit_and_push(message, redo=None, tries=3):
+    for attempt in range(1, tries + 1):
+        git("add", "-A", "--", *TRACKED)
+        if git("diff", "--cached", "--quiet", check=False).returncode == 0:
+            print("data repo: no change")
+            return
+        git("commit", "-q", "-m", message, "--", *TRACKED)
+        r = git("push", "-q", check=False)
+        if r.returncode == 0:
+            print("data repo: pushed")
+            return
+        print(f"data repo: push rejected (attempt {attempt}), another machine was faster; pulling and merging again")
+        git("reset", "-q", "--keep", "HEAD~1")              # drop our commit, keep other local work
+        git("checkout", "-q", "--", *TRACKED, check=False)  # our files are regenerated from raw anyway
+        git("pull", "-q", "--rebase", "--autostash")
+        if redo:
+            redo()
+    sys.exit("data repo: could not push after several tries")
 
 
 def sync():
-    """fetch + build + push; what the scheduled task runs."""
+    """pull + fetch + merge + build + push; what the scheduled task runs."""
+    if not (DATA_REPO / ".git").exists():
+        sys.exit(f"Data repo clone missing: {DATA_REPO}")
+    git("pull", "-q", "--rebase", "--autostash")
     fetch()
+
+    def merge_and_build():
+        merge_history()
+        build()
+
+    merge_and_build()
+    commit_and_push(f"Polar import {date.today()}", redo=merge_and_build)
+
+
+def migrate():
+    """One-off: move credentials/history from the old local data/polar/ into the data repo."""
+    old_cred, old_hist = LOCAL / "credentials.json", LOCAL / "history.json"
+    git("pull", "-q", "--rebase", "--autostash")
+    if old_cred.exists() and not CRED.exists():
+        save_cred(json.loads(old_cred.read_text(encoding="utf-8")))
+    if old_hist.exists():
+        h = json.loads(old_hist.read_text(encoding="utf-8"))
+        HISTORY.mkdir(parents=True, exist_ok=True)
+        for name, (_, _, day_of, id_of) in STREAMS.items():
+            for r in (h.get(name) or {}).values():
+                if name == "cardioLoad" and r.get("cardio_load", -1) < 0:
+                    continue
+                f = HISTORY / f"{day_of(r)[:7]}.json"
+                m = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+                m.setdefault(name, {})[id_of(r)] = r
+                f.write_text(json.dumps(m, ensure_ascii=False, indent=0, sort_keys=True), encoding="utf-8")
     build()
-    push()
+    commit_and_push("Polar: credentials and history into the data repo")
+    for p in (old_cred, old_hist):
+        p.unlink(missing_ok=True)
+    print("migrated; local copies removed")
 
 
 if __name__ == "__main__":
     if sys.stdout is None:  # pythonw (scheduled task): no console, so append output to a log
-        DIR.mkdir(parents=True, exist_ok=True)
-        sys.stdout = sys.stderr = open(DIR / "sync.log", "a", encoding="utf-8")
+        LOCAL.mkdir(parents=True, exist_ok=True)
+        sys.stdout = sys.stderr = open(LOCAL / "sync.log", "a", encoding="utf-8")
         print(f"--- {datetime.now().isoformat(timespec='seconds')}")
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
-    {"setup": setup, "fetch": fetch, "build": build, "push": push, "sync": sync}.get(cmd, lambda: sys.exit(__doc__))()
+    {"setup": setup, "fetch": fetch, "build": build, "sync": sync, "migrate": migrate}.get(cmd, lambda: sys.exit(__doc__))()
