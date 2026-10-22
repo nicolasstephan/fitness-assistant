@@ -51,10 +51,32 @@ html, body {
 
 button { font: inherit; color: inherit; cursor: pointer; }
 
+/* app bar on top, the active section fills the rest */
+body { display: flex; flex-direction: column; height: 100dvh; }
+
+.appbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.app-title { font-size: 16px; white-space: nowrap; }
+.appbar-end { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+/* Health | Exercise: two equal sections, one segmented switch */
+.mode-switch { display: flex; padding: 3px; gap: 2px; background: var(--chip); border: 1px solid var(--border); border-radius: 10px; }
+.mode-switch button { border: 0; background: none; padding: 6px 16px; border-radius: 7px; color: var(--muted); font-weight: 500; }
+.mode-switch button:hover { color: var(--text); }
+.mode-switch button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); }
+
 .layout {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: 1fr 360px;
-  height: 100dvh;
 }
 
 /* ---------- 3D stage */
@@ -75,37 +97,29 @@ button { font: inherit; color: inherit; cursor: pointer; }
   touch-action: none;
 }
 
-.toolbar {
+/* display toggles: a small stack at the right edge of the stage */
+.stage-tools {
   position: absolute;
   top: 12px;
-  left: 50%;
-  translate: -50% 0;
+  right: 12px;
   display: flex;
+  flex-direction: column;
   gap: 4px;
-  padding: 4px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
-  max-width: calc(100% - 24px);
-  overflow-x: auto;
 }
-
-.toolbar button {
-  border: 0;
-  background: transparent;
-  padding: 6px 10px;
+.stage-tools button {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 4px 9px;
   border-radius: 7px;
+  font-size: 13px;
   white-space: nowrap;
 }
-.toolbar button:hover { background: var(--chip); }
-.toolbar button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
-.toolbar .sep { width: 1px; background: var(--border); margin: 4px 2px; }
-.view-select { display: none; }
+.stage-tools button:hover { background: var(--chip); }
+.stage-tools button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 
 .legend {
   position: absolute;
-  top: 64px;
+  top: 12px;
   left: 12px;
   display: flex;
   flex-direction: column;
@@ -172,7 +186,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .panel-head { padding: 14px 16px 0; }
 .panel-head h1 { margin: 0 0 10px; font-size: 18px; }
 
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.tabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--border); }
+.tabs .panel-expand { margin-left: auto; }
 .tabs button {
   border: 0;
   background: none;
@@ -259,10 +274,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: block;
   border: 0;
   background: none;
-  padding: 0 0 8px;
+  padding: 0;
   font-size: 12px;
   color: var(--muted);
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 .sync-status::before { content: "●"; margin-right: 5px; color: var(--border); }
 .sync-status[data-kind="ok"]::before { color: #2f9e44; }
@@ -407,15 +426,13 @@ dialog h3.dialog-h { margin: 16px 0 0; font-size: 13px; text-transform: uppercas
 body[data-view="health"] .layout { display: none; }
 
 .health {
-  height: 100dvh;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 16px max(16px, calc((100vw - 1180px) / 2)) 32px;
 }
-.health-head { display: flex; align-items: center; gap: 14px; }
-.health-head > button { white-space: nowrap; flex: none; }
-.health-head h1 { margin: 0; font-size: 20px; }
-.health-head p { margin: 2px 0 0; font-size: 13px; }
+.health-head p { margin: 0; font-size: 13px; }
 
 .filter-row { display: flex; gap: 6px; margin: 16px 0; flex-wrap: wrap; }
 .filter-row button {
@@ -513,15 +530,17 @@ body[data-view="health"] .layout { display: none; }
   body.panel-expanded .stage { visibility: hidden; }
   body.panel-expanded .panel { border-top: 0; }
   .panel { border-left: 0; border-top: 1px solid var(--border); }
-  .panel-head h1 { font-size: 15px; }
-  .panel-head { padding-top: 6px; }
+  .panel-head { padding-top: 2px; }
+  .appbar { padding: 6px 10px; gap: 8px; }
+  .app-title { display: none; } /* the switch is the heading on a phone */
+  .mode-switch button { padding: 6px 14px; }
+  .sync-status { font-size: 0; } /* just the colored dot; tap it for settings */
+  .sync-status::before { font-size: 12px; margin: 0; }
   /* the stage is small here: compact overlays, and the model is fitted between them (viewer.setInsets) */
-  .toolbar { top: 8px; padding: 3px; }
-  .toolbar button { padding: 5px 8px; font-size: 14px; }
-  .toolbar [data-view] { display: none; }
-  .view-select { display: block; border: 0; border-radius: 7px; background: var(--chip); color: var(--text); font: inherit; font-size: 14px; padding: 4px 6px; }
+  .stage-tools { top: 8px; right: 8px; }
+  .stage-tools button { padding: 3px 7px; font-size: 12px; }
   #legend-highlight { display: none; } /* the info box shows the same red / orange dots with names */
-  .legend { top: 52px; left: 8px; right: 8px; flex-direction: row; flex-wrap: nowrap; gap: 10px; font-size: 12px; white-space: nowrap; overflow-x: auto; }
+  .legend { top: 8px; left: 8px; right: 92px; flex-direction: row; flex-wrap: nowrap; gap: 10px; font-size: 12px; white-space: nowrap; overflow-x: auto; }
   .info { left: 8px; right: 8px; bottom: 8px; font-size: 12px; padding: 6px 10px; max-width: none; max-height: 24%; overflow-y: auto; }
 }
 

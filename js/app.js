@@ -226,16 +226,18 @@ async function loadHealth(cfg) {
   }
 }
 
-// ---------- views: body (3D) / health (dashboard)
+// ---------- the two sections, switched in the app bar: health (dashboard, default) / exercise (3D model + panel)
 
 function showView(view) {
   document.body.dataset.view = view;
   $("#health-view").hidden = view !== "health";
+  document.querySelectorAll("[data-show]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.show === view)));
   if (view === "health") health.render();
+  else updateInsets(); // the stage was hidden: fit the model now that it has a size
   writeHash();
 }
 
-$("#health-open").addEventListener("click", () => showView("health"));
+document.querySelectorAll("[data-show]").forEach((b) => b.addEventListener("click", () => showView(b.dataset.show)));
 
 // phone: the panel can take the whole screen (remembered per device)
 function setPanelExpanded(on) {
@@ -247,7 +249,6 @@ function setPanelExpanded(on) {
 }
 $("#panel-expand").addEventListener("click", () => setPanelExpanded(!document.body.classList.contains("panel-expanded")));
 try { setPanelExpanded(localStorage.getItem("panelExpanded") === "1"); } catch { setPanelExpanded(false); }
-$("#health-back").addEventListener("click", () => showView("body"));
 
 const primaryLabels = (e) => e.primary.map((g) => groupById.get(g)?.label ?? g).join(" · ");
 
@@ -354,9 +355,10 @@ $("#group-list").addEventListener("click", (e) => {
 
 // ---------- tabs
 
-document.querySelectorAll("[role=tab]").forEach((tab) =>
+// the panel's own tabs only; the Health / Exercise switch in the app bar is a tablist too
+document.querySelectorAll(".tabs [role=tab]").forEach((tab) =>
   tab.addEventListener("click", () => {
-    document.querySelectorAll("[role=tab]").forEach((t) => t.setAttribute("aria-selected", t === tab));
+    document.querySelectorAll(".tabs [role=tab]").forEach((t) => t.setAttribute("aria-selected", t === tab));
     document.querySelectorAll("[data-tab-body]").forEach((b) => (b.hidden = b.dataset.tabBody !== tab.dataset.tab));
     if (tab.dataset.tab === "today") checkin.render();
   }),
@@ -364,14 +366,7 @@ document.querySelectorAll("[role=tab]").forEach((tab) =>
 
 // ---------- toolbar
 
-document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => {
-  viewer.setView(b.dataset.view);
-  $("#view-select").value = b.dataset.view;
-}));
-// phone: one dropdown instead of four view buttons, so the toolbar fits on one line
-$("#view-select").addEventListener("change", (e) => viewer.setView(e.target.value));
-
-// keep the model clear of the toolbar, legend and info box floating over the stage
+// keep the model clear of the legend and info box floating over the stage
 function updateInsets() {
   const stage = $(".stage").getBoundingClientRect();
   // only overlays over the middle third count (where the body is); a legend at the left edge does not
@@ -381,14 +376,14 @@ function updateInsets() {
     const r = el.getBoundingClientRect();
     return r.left < mid + stage.width / 6 && r.right > mid - stage.width / 6;
   };
-  const top = Math.max(0, ...[".toolbar", "#legend-highlight", "#legend-volume"]
+  const top = Math.max(0, ...[".stage-tools", "#legend-highlight", "#legend-volume"]
     .map((s) => $(s)).filter(covers).map((el) => el.getBoundingClientRect().bottom - stage.top));
   const info = $("#info");
   const bottom = covers(info) ? stage.bottom - info.getBoundingClientRect().top : 0;
   viewer.setInsets(top + 6, bottom + 6);
 }
 const insetObserver = new ResizeObserver(updateInsets);
-[".stage", ".toolbar", "#info", "#legend-highlight", "#legend-volume"].forEach((s) => insetObserver.observe($(s)));
+[".stage", ".stage-tools", "#info", "#legend-highlight", "#legend-volume"].forEach((s) => insetObserver.observe($(s)));
 
 function toggle(btn, fn) {
   btn.addEventListener("click", () => {
@@ -492,7 +487,7 @@ function writeHash() {
   else if (state.exercises.size) params.set("ex", [...state.exercises].join(","));
   if (viewer.xray) params.set("xray", "1");
   if (state.volume) params.set("volume", "1");
-  if (document.body.dataset.view === "health") params.set("view", "health");
+  if (document.body.dataset.view === "exercise") params.set("view", "exercise"); // health is the default
   const hash = params.toString().replaceAll("%2C", ",");
   history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
 }
@@ -501,10 +496,6 @@ function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
   state.exercises = new Set((params.get("ex") ?? "").split(",").filter((id) => state.mine.includes(id)));
   state.group = groupById.has(params.get("group")) ? params.get("group") : null;
-  if (params.get("view") === "health") {
-    document.body.dataset.view = "health";
-    $("#health-view").hidden = false;
-  }
   if (params.get("xray") === "1") {
     viewer.setXray(true);
     $("#toggle-xray").setAttribute("aria-pressed", "true");
@@ -598,9 +589,13 @@ $("#sync-disconnect").addEventListener("click", () => {
 
 // ---------- boot
 
-const startVolume = new URLSearchParams(location.hash.slice(1)).get("volume") === "1"; // read before the hash is rewritten
+const startParams = new URLSearchParams(location.hash.slice(1)); // read before the hash is rewritten
+const startVolume = startParams.get("volume") === "1";
+// health unless the link asks for exercise (also the old "body" view, or a selection on the model)
+const startExercise = ["exercise", "body"].includes(startParams.get("view")) || ["ex", "group", "volume"].some((k) => startParams.has(k));
 state.mine = profile.doc.myExercises;
 readHash();
+showView(startExercise ? "exercise" : "health");
 renderMyExercises();
 health.setJournal(journal.doc);
 if (startVolume) setVolume(true);
