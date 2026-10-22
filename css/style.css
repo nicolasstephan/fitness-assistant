@@ -107,13 +107,17 @@ body { display: flex; flex-direction: column; height: 100dvh; }
   gap: 4px;
 }
 .stage-tools button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
   border: 1px solid var(--border);
   background: var(--panel);
-  padding: 4px 9px;
-  border-radius: 7px;
-  font-size: 13px;
-  white-space: nowrap;
+  border-radius: 8px;
 }
+/* line icons like the app bar's: 1.6px strokes in the text color */
+.stage-tools svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .stage-tools button:hover { background: var(--chip); }
 .stage-tools button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 
@@ -556,7 +560,6 @@ body:not([data-view="exercise"]) .layout { display: none; }
   .sync-status::before { font-size: 12px; margin: 0; }
   /* the stage is small here: compact overlays, and the model is fitted between them (viewer.setInsets) */
   .stage-tools { top: 8px; right: 8px; }
-  .stage-tools button { padding: 3px 7px; font-size: 12px; }
   #legend-highlight { display: none; } /* the info box shows the same red / orange dots with names */
   .legend { top: 8px; left: 8px; right: 92px; flex-direction: row; flex-wrap: nowrap; gap: 10px; font-size: 12px; white-space: nowrap; overflow-x: auto; }
   .info { left: 8px; right: 8px; bottom: 8px; font-size: 12px; padding: 6px 10px; max-width: none; max-height: 24%; overflow-y: auto; }

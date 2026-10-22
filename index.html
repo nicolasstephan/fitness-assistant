@@ -46,8 +46,14 @@
 
       <!-- small display toggles at the side of the model; drag to turn it -->
       <div class="stage-tools" role="toolbar" aria-label="Display">
-        <button id="toggle-xray" aria-pressed="true">X-ray</button>
-        <button id="toggle-skeleton" aria-pressed="false">Skeleton</button>
+        <button id="toggle-xray" aria-pressed="true" aria-label="X-ray" title="X-ray">
+          <!-- scan frame around a figure -->
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/><circle cx="10" cy="6.6" r="1.5"/><path d="M10 8.6v4M7.4 10.2h5.2M10 12.6l-1.9 2.6M10 12.6l1.9 2.6"/></svg>
+        </button>
+        <button id="toggle-skeleton" aria-pressed="false" aria-label="Skeleton" title="Skeleton">
+          <!-- skull, spine, ribs curving down from it, pelvis -->
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="3.4" r="1.8"/><path d="M10 5.2v10.3M10 7.3q-3.8 0-4.4 2.4M10 7.3q3.8 0 4.4 2.4M10 9.9q-3.4 0-3.9 2.2M10 9.9q3.4 0 3.9 2.2M10 12.4q-2.8 0-3.2 1.8M10 12.4q2.8 0 3.2 1.8M6.6 16.2q3.4 2.2 6.8 0"/></svg>
+        </button>
       </div>
 
       <div class="legend" id="legend-highlight">
