@@ -1,12 +1,15 @@
 /* Theme: hub design baseline (hub templates/design.md), Villa Massimo tokens. <html data-theme> is set
    by js/theme.js: follows the system setting unless overridden in Settings. The app's short names
    (--panel, --muted, --border, --chip, --stage) map onto the baseline tokens; muscle, chart and volume
-   colors are the app's own (validated per theme). */
+   colors are the app's own (validated per theme).
+   Color is reserved for data: muscles red / orange, volume blues, chart series, good / bad verdicts.
+   Everything general (selection, pressed toggles, main buttons, links, status) is grayscale: --accent is
+   near-black in light mode and light gray in dark mode (Nicolas, 2026-10-22). */
 :root, [data-theme="light"] {
   --bg: #ffffff; --text: #1b1c1f; --text-mid: #33353a; --text-dim: #5f636a;
   --panel-bg: rgba(247,248,250,.94); --panel-border: #cfd2d8; --sec-border: #dde0e5;
   --btn-bg: #e8eaee; --btn-border: #c2c5cc; --btn-text: #23252a; --btn-hover: #d6d9df;
-  --accent: #2f6bf0; --accent-text: #fff; --link: #2f6bf0;
+  --accent: #1b1c1f; --accent-text: #fff; --link: #1b1c1f;
   --popup-bg: rgba(250,250,252,.97); --popup-border: #cfd2d8; --input-bg: #fff; --input-border: #c2c5cc;
   --primary: #e03131; --secondary: #f59f00; --series-1: #2a78d6; --series-2: #eb6834;
   --series-3: #1baf7a; --series-4: #eda100; --grid: #e1e0d9; --trend: #52514e; --vol-1: #5598e7;
@@ -18,7 +21,7 @@
   --bg: #1e1f22; --text: #eee; --text-mid: #bbb; --text-dim: #888;
   --panel-bg: rgba(20,20,24,.92); --panel-border: #333; --sec-border: #2a2a30;
   --btn-bg: #26262e; --btn-border: #3a3a44; --btn-text: #ddd; --btn-hover: #33333d;
-  --accent: #3a6df0; --accent-text: #fff; --link: #8fb0ff;
+  --accent: #e4e4e7; --accent-text: #1b1c1f; --link: #eee;
   --popup-bg: rgba(20,20,24,.96); --popup-border: #444; --input-bg: #26262e; --input-border: #3a3a44;
   --primary: #e03131; --secondary: #f59f00; --series-1: #3987e5; --series-2: #d95926;
   --series-3: #199e70; --series-4: #c98500; --grid: #2c3038; --trend: #c3c2b7; --vol-1: #256abf;
@@ -295,9 +298,9 @@ body { display: flex; flex-direction: column; height: 100dvh; }
   min-width: 0;
 }
 .sync-status::before { content: "●"; margin-right: 5px; color: var(--border); }
-.sync-status[data-kind="ok"]::before { color: #2f9e44; }
-.sync-status[data-kind="error"] { color: var(--primary); }
-.sync-status[data-kind="error"]::before { color: var(--primary); }
+.sync-status[data-kind="ok"]::before { color: var(--text-mid); }
+.sync-status[data-kind="error"] { color: var(--text); font-weight: 600; }
+.sync-status[data-kind="error"]::before { content: "!"; color: var(--text); }
 
 dialog {
   width: min(460px, calc(100vw - 32px));
@@ -310,7 +313,7 @@ dialog {
 }
 dialog::backdrop { background: rgb(0 0 0 / 0.35); }
 dialog h2 { margin: 0 0 6px; font-size: 17px; }
-dialog a { color: var(--link); }
+dialog a { color: var(--link); text-decoration: underline; }
 dialog code { font-size: 12px; background: var(--chip); padding: 1px 4px; border-radius: 4px; }
 .steps { padding-left: 18px; }
 .steps li { margin-bottom: 4px; }
@@ -323,13 +326,13 @@ dialog input {
   color: var(--text);
   font: inherit;
 }
-.sync-error { min-height: 1.2em; font-size: 13px; color: var(--primary); margin: 10px 0 0; }
+.sync-error { min-height: 1.2em; font-size: 13px; color: var(--text); font-weight: 600; margin: 10px 0 0; }
 .dialog-actions { display: flex; gap: 8px; margin-top: 12px; }
 .dialog-actions .spacer { flex: 1; }
 .dialog-actions button { padding: 8px 14px; }
 .primary-btn { border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-text); }
 .primary-btn:disabled { opacity: 0.6; }
-.ghost.danger { color: var(--primary); }
+.ghost.danger { color: var(--text); }
 
 .list li small.last-session { color: var(--text); opacity: 0.75; }
 .list li .ghost.small { flex: none; }
@@ -369,7 +372,7 @@ dialog input {
 .workout-bar .hint { margin: 8px 0 0; }
 .workout-bar .hint .ghost.small { margin-left: 8px; }
 .workout-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.workout-live::before { content: "●"; color: var(--primary); margin-right: 6px; }
+.workout-live::before { content: "●"; color: var(--text); margin-right: 6px; }
 #workout-elapsed { font-size: 20px; font-variant-numeric: tabular-nums; }
 .workout-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .primary-btn.small { padding: 6px 12px; font-size: 14px; }
@@ -420,7 +423,7 @@ dialog select { padding: 8px 6px; border: 1px solid var(--border); border-radius
 .plan-set input { width: 58px; padding: 5px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
 .plan-set.done input { border-color: transparent; background: transparent; color: var(--text); font-weight: 600; }
 .tick-btn { width: 36px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); font-size: 16px; }
-.tick-btn[aria-pressed="true"] { background: #2f9e44; border-color: #2f9e44; color: #fff; }
+.tick-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .plan-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
 .plan-row { margin-top: 10px; padding: 8px 10px 10px; border: 1px solid var(--border); border-radius: 10px; }
 .plan-row-head { display: grid; grid-template-columns: 1fr 32px; gap: 8px; align-items: end; }

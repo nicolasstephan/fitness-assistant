@@ -11,6 +11,9 @@ First applied to: digital-library website (2026-10-17).
 - Settings offer an override, **System / Light / Dark**, default System, remembered per device.
 - One blue accent: `#2f6bf0` light, `#3a6df0` dark, with white text on it. In dark mode, links and other
   accent-colored *text* use a lighter blue (`--link`), because `#3a6df0` is too dark to read on dark gray.
+  **Fitness Assistant deviates (Nicolas, 2026-10-22):** color is reserved for data (muscles red / orange,
+  volume blues, chart series, good / bad verdicts); all general UI is grayscale, `--accent` = `#1b1c1f`
+  light / `#e4e4e7` dark with contrasting text.
 - Everything drawn follows the theme too: 3D scene background (`--bg`), map basemap (light/dark style),
   canvas and chart colors (read from the CSS variables on every theme change).
 - Font: `system-ui, sans-serif`.

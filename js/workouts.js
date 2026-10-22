@@ -323,7 +323,8 @@ export class WorkoutView {
       ...log.plans.map((p) => el("li", {},
         el("div", { className: "li-text" },
           el("span", { textContent: p.name }),
-          el("small", { textContent: p.items.map((it) => `${this.exerciseById.get(it.exercise)?.name ?? it.exercise} ${describePlanItem(it)}`).join(" · ") })),
+          // one line per exercise: a joined line wrapped mid-exercise ("Pull-up 3, 2, / 2")
+          ...p.items.map((it) => el("small", { textContent: `${this.exerciseById.get(it.exercise)?.name ?? it.exercise} ${describePlanItem(it)}` }))),
         el("button", { type: "button", className: "ghost small", dataset: { editPlan: p.id }, textContent: "Edit" }),
         el("button", { type: "button", className: "primary-btn small", dataset: { startPlan: p.id }, textContent: "▶ Start" }))),
     );
