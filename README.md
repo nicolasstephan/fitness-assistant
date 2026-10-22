@@ -2,7 +2,7 @@
 
 https://nicolasstephan.github.io/fitness-assistant/
 
-Desktop shortcut (Windows): `powershell -File tools/make_shortcut.ps1` opens the site in its own Chrome/Edge app window, with the hub icon `icons/fitness-assistant.ico`.
+Desktop shortcut (Windows): `powershell -File tools/make_shortcut.ps1` opens the site in a new Firefox window (the app's sync settings are stored per browser), with the hub icon `icons/fitness-assistant.ico`.
 
 ## Health data
 
