@@ -178,15 +178,19 @@ export function lineChart(container, points, opts) {
   const smooth = opts.smooth?.points ?? null;
   const all = smooth ? [...points, ...smooth] : points;
   const vals = all.map((p) => p.v).filter((v) => v != null);
-  if (!vals.length) return noData(container);
+  if (!all.length) return noData(container);
   const t0 = Math.min(...all.map((p) => p.t)), t1 = Math.max(...all.map((p) => p.t));
-  const ticks = opts.ticks ?? niceTicks(Math.min(...vals), Math.max(...vals));
+  // no values at all: still the frame, dates and "No data" bands (fixed ticks if the chart has them)
+  const [vMin, vMax] = [Math.min(...vals), Math.max(...vals)];
+  const pad = vMin === vMax ? Math.abs(vMin) * 0.1 || 1 : 0; // one distinct value: open the axis around it
+  const ticks = opts.ticks ?? (vals.length ? niceTicks(vMin - pad, vMax + pad) : [0, 1]);
   const [lo, hi] = [ticks[0], ticks.at(-1)];
   const x = (t) => PAD.left + ((t - t0) / (t1 - t0 || 1)) * (width - PAD.left - PAD.right);
   const y = (v) => PAD.top + (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo || 1)) * (height - PAD.top - PAD.bottom);
   const fmt = opts.format ?? ((v) => `${Math.round(v)}`);
 
-  yAxis(svg, ticks, y, PAD.left, width - PAD.right, opts.tickFormat ?? fmt);
+  if (vals.length) yAxis(svg, ticks, y, PAD.left, width - PAD.right, opts.tickFormat ?? fmt);
+  else yAxis(svg, opts.ticks ? ticks : [], y, PAD.left, width - PAD.right, opts.tickFormat ?? fmt);
   drawGaps(svg, opts.gaps, x, width, height);
   drawMarks(svg, opts.marks, x, width, height);
   const tt = timeTicks(t0, t1, width - PAD.left - PAD.right);
@@ -207,9 +211,16 @@ export function lineChart(container, points, opts) {
   svgEl("path", { d: pathOf(points), class: smooth ? "line faint" : "line", stroke: opts.color }, svg);
   drawTrends(svg, opts.trend, x, y);
   if (smooth) svgEl("path", { d: pathOf(smooth), class: "line", stroke: opts.color }, svg);
+  // a value without neighbors draws no line segment: mark it as a dot so single days stay visible
+  points.forEach((p, i) => {
+    if (p.v != null && points[i - 1]?.v == null && points[i + 1]?.v == null) {
+      svgEl("circle", { cx: x(p.t), cy: y(p.v), r: 3, fill: opts.color }, svg);
+    }
+  });
 
   const main = smooth ?? points;
-  const last = [...main].reverse().find((p) => p.v != null);
+  // end label on the average; while the average has too few days, on the last daily value
+  const last = [...main].reverse().find((p) => p.v != null) ?? [...points].reverse().find((p) => p.v != null);
   if (last) {
     svgEl("circle", { cx: x(last.t), cy: y(last.v), r: 4, fill: opts.color, class: "dot" }, svg);
     svgEl("text", { x: x(last.t) + 8, y: y(last.v), class: "end-label", "dominant-baseline": "middle" }, svg).textContent = fmt(last.v);
@@ -259,8 +270,9 @@ export function lineChart(container, points, opts) {
 export function stackedColumns(container, rows, series, opts) {
   const { svg, width, height, tip } = frame(container, opts.height ?? 200);
   const totals = rows.map((r) => r.values.reduce((a, b) => a + (b ?? 0), 0));
-  if (!totals.some((v) => v > 0)) return noData(container);
-  const ticks = niceTicks(0, Math.max(...totals));
+  if (!rows.length) return noData(container);
+  // all zero: still the frame, dates and "No data" bands
+  const ticks = niceTicks(0, Math.max(...totals) || 1);
   const hi = ticks.at(-1);
   const plotW = width - PAD.left - PAD.right;
   const band = plotW / rows.length;

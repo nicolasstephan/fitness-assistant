@@ -5,7 +5,7 @@ import { versionOn } from "./supplements.js";
 
 const DAY = 86400000;
 const RANGES = { 30: 30, 90: 90, 365: 365, all: Infinity };
-const SPARSE = 7; // fewer days with a value than this: a number instead of a chart
+const SPARSE = 7; // a tile's average from fewer days than this is shown dimmed
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const tUTC = (date) => Date.parse(`${date}T00:00:00Z`);
@@ -342,29 +342,8 @@ export class HealthView {
     const switchDay = both ? cur.find((d) => d.source === "polar" && hasData(d)) : null;
     const marks = switchDay ? [{ t: switchDay.t, label: "Polar" }] : [];
 
-    // fewer than SPARSE days with a value: the latest value as a number, not a near-empty chart
-    const sparseCard = (parent, title, sub, get, format, unit) => {
-      const withValue = cur.filter((d) => get(d) != null);
-      if (withValue.length >= SPARSE) return false;
-      const card = this.card(parent, title, sub, null, null, null);
-      const body = card.querySelector(".card-body");
-      if (!withValue.length) {
-        body.textContent = "No data in this period.";
-        return true;
-      }
-      const last = withValue.at(-1);
-      const value = document.createElement("div");
-      value.className = "tile-value";
-      value.textContent = `${format(get(last))}${unit === "%" ? "%" : unit ? ` ${unit}` : ""}`;
-      const note = document.createElement("p");
-      note.className = "card-note";
-      note.textContent = `Latest, ${fmtDay(last.t)} · ${withValue.length} ${withValue.length === 1 ? "day" : "days"} with data in this period; the chart appears from ${SPARSE} days on.`;
-      body.append(value, note);
-      return true;
-    };
-
+    // every chart is drawn in every range, also with few or no values: empty stretches show as "No data" bands
     const lineCard = (parent, title, sub, get, opts, unitLabel, fmtDelta, higherIsGood) => {
-      if (sparseCard(parent, title, sub, get, opts.format, opts.unit)) return;
       const b = this.bucket(cur, get);
       const smooth = this.rolling(days, cur, get, window);
       const trends = long ? this.trendsFor(b.points, get, both) : [];
@@ -413,7 +392,7 @@ export class HealthView {
     const sleepSmooth = this.rolling(days, cur, asleepH, window);
     const sleepTrends = long ? this.trendsFor(sb.points, asleepH, both) : [];
     const sleepSub = `Hours asleep per night${sb.weekly ? " · weekly average" : ""}`;
-    if (!sparseCard(sleepGroup, "Sleep stages", sleepSub, asleepH, (v) => hm(v * 60), "h")) {
+    {
       this.card(sleepGroup, "Sleep stages", sleepSub,
         (el) => stackedColumns(el, sleepRows, stages, { unit: "h", describe: sb.describe, format: (v) => hm(v * 60), trend: sleepTrends, smooth: sleepSmooth, gaps, marks }),
         [
