@@ -4,11 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#ffffff">
-  <script>try{var m=localStorage.getItem("theme")||"system";document.documentElement.dataset.theme=m==="system"?(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):m}catch(e){}</script>
+  <script>try{var s=localStorage,m=s.getItem("theme")||"system",d=document.documentElement;d.dataset.theme=m==="system"?(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):m;d.dataset.style=s.getItem("style")||"standard"}catch(e){}</script>
   <title>Fitness Assistant</title>
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="stylesheet" href="css/style.css">
+  <!-- styles (Settings > Style): shared HUD layer from the hub, then this app's HUD mapping -->
+  <link rel="stylesheet" href="css/styles/hud.css">
+  <link rel="stylesheet" href="css/hud.css">
   <script type="importmap">
     {
       "imports": {
@@ -264,6 +267,7 @@
       <label>Appearance<select id="theme-mode">
         <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
       </select></label>
+      <label>Style<select id="style-mode"></select></label>
       <h3 class="dialog-h">About</h3>
       <p class="hint credits">
         Anatomy: <a href="https://www.z-anatomy.com" target="_blank" rel="noopener">Z-Anatomy</a> (CC BY-SA 4.0),

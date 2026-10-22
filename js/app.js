@@ -10,7 +10,7 @@ import { weeklySets, volumeColors, workoutMuscles, VOLUME_BINS, VOLUME_TARGET } 
 import { WorkoutView } from "./workouts.js";
 import { SupplementDialog } from "./supplements.js";
 import { checkForUpdate } from "./update-check.js";
-import { getThemeMode, setThemeMode } from "./theme.js";
+import { getThemeMode, setThemeMode, getStyle, setStyle, STYLES } from "./theme.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -603,6 +603,10 @@ $("#sync-open").addEventListener("click", openSyncDialog);
 // appearance (in the settings dialog): System / Light / Dark; charts and muscle colors follow on change
 $("#theme-mode").value = getThemeMode();
 $("#theme-mode").addEventListener("change", (e) => setThemeMode(e.target.value));
+// style (shared with the other apps, hub templates/styles): Standard / HUD
+$("#style-mode").replaceChildren(...STYLES.map((s) => Object.assign(document.createElement("option"), { value: s.id, textContent: s.label })));
+$("#style-mode").value = getStyle();
+$("#style-mode").addEventListener("change", (e) => setStyle(e.target.value));
 addEventListener("themechange", () => {
   if (state.tab === "volume" || state.planFocus) refresh(); // heatmap / plan greens come from CSS tokens
   if (document.body.dataset.view === "health") health.render();

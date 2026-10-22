@@ -1,0 +1,63 @@
+/* Fitness Assistant in the HUD style: its own parts mapped onto the shared layer (css/styles/hud.css, from the
+   hub's templates/styles; loaded before this file). Active with <html data-style="hud"> (Settings > Style).
+   Data colors (muscles, volume, plan green, chart series, good / bad) stay as they are. */
+
+/* app bar: squared brand; Health | Exercise | Today as inverse boxes (no brackets: they are a switch, not tabs) */
+[data-style="hud"] .appbar { background: var(--bg); }
+[data-style="hud"] .app-title { font: 600 15px/1 var(--display); letter-spacing: .18em; text-transform: uppercase; }
+[data-style="hud"] .mode-switch { background: transparent; border-color: var(--btn-border); }
+[data-style="hud"] .mode-switch button { font-family: var(--display); letter-spacing: .12em; text-transform: uppercase; }
+[data-style="hud"] .mode-switch [role="tab"][aria-selected="true"]::before,
+[data-style="hud"] .mode-switch [role="tab"][aria-selected="true"]::after { content: none; }
+@media (max-width: 560px) {
+  [data-style="hud"] .sync-status { font-size: 0; } /* just the dot, as in the standard style */
+  [data-style="hud"] .mode-switch button { padding: 6px 10px; font-size: 13px; letter-spacing: .04em; }
+  [data-style="hud"] .tabs button { letter-spacing: .03em; padding: 8px 8px; }
+}
+[data-style="hud"] .mode-switch button[aria-selected="true"] { background: var(--text); color: var(--bg); }
+[data-style="hud"] .sync-status { font: 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+
+/* panel tabs: bracketed current tab (shared), no underline */
+[data-style="hud"] .tabs button[aria-selected="true"] { border-bottom-color: transparent; color: var(--text); }
+[data-style="hud"] .panel { background: var(--bg); }
+
+/* section labels: mono micro-labels */
+[data-style="hud"] .card-group > h2, [data-style="hud"] .fold > summary h3, [data-style="hud"] .workout-plans-head h3,
+[data-style="hud"] .vol-h, [data-style="hud"] #group-list h3, [data-style="hud"] .checkin-h, [data-style="hud"] dialog h3.dialog-h,
+[data-style="hud"] .health-head p, [data-style="hud"] .legend, [data-style="hud"] .legend-row {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+}
+[data-style="hud"] .card-group > h2 { display: flex; gap: 10px; align-items: center; }
+[data-style="hud"] .card-group > h2::after {
+  content: ""; flex: 1; height: 1px; background: repeating-linear-gradient(90deg, var(--text-dim) 0 1px, transparent 1px 6px);
+}
+
+/* number + tiny label: the tiles */
+[data-style="hud"] .tile-label { font: 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+[data-style="hud"] .tile-value { font: 500 28px/1.1 var(--mono); }
+[data-style="hud"] .tile-delta { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; }
+[data-style="hud"] .card h2, [data-style="hud"] dialog h2 { font-family: var(--display); letter-spacing: .02em; }
+[data-style="hud"] .filter-row button { font: 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; border-color: var(--btn-border); }
+[data-style="hud"] .trend-verdict { font-family: var(--mono); }
+
+/* charts: mono numbers and labels */
+[data-style="hud"] .chart text { font-family: var(--mono); }
+[data-style="hud"] .data-table { font-family: var(--mono); font-size: 12px; }
+
+/* lists: hairline marker instead of a hover fill */
+[data-style="hud"] .list li:hover { background: none; box-shadow: inset 2px 0 0 var(--text); }
+[data-style="hud"] .list li.active:hover, [data-style="hud"] .list li.plan-active:hover { box-shadow: inset 2px 0 0 var(--text); }
+
+/* 3D stage: info box framed like the cards; display toggles as outlined squares */
+[data-style="hud"] .info { --bk: var(--text-dim); border: 0; box-shadow: none; background:
+  linear-gradient(var(--bk), var(--bk)) top left / 12px 1px no-repeat, linear-gradient(var(--bk), var(--bk)) top left / 1px 12px no-repeat,
+  linear-gradient(var(--bk), var(--bk)) top right / 12px 1px no-repeat, linear-gradient(var(--bk), var(--bk)) top right / 1px 12px no-repeat,
+  linear-gradient(var(--bk), var(--bk)) bottom left / 12px 1px no-repeat, linear-gradient(var(--bk), var(--bk)) bottom left / 1px 12px no-repeat,
+  linear-gradient(var(--bk), var(--bk)) bottom right / 12px 1px no-repeat, linear-gradient(var(--bk), var(--bk)) bottom right / 1px 12px no-repeat,
+  var(--panel-bg); }
+[data-style="hud"] .stage-tools button:not([aria-pressed="true"]) { background: var(--bg); border-color: var(--btn-border); }
+
+/* today: answers as squared boxes, supplements as code chips */
+[data-style="hud"] .supp-chip { font-family: var(--mono); background: transparent; border-color: var(--btn-border); }
+[data-style="hud"] .supp-chip[aria-pressed="true"] { background: transparent; color: var(--text); border-color: var(--text); }
+[data-style="hud"] .checkin-nav strong { font: 600 15px var(--display); letter-spacing: .12em; text-transform: uppercase; }
