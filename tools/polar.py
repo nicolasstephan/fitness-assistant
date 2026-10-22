@@ -310,5 +310,9 @@ def sync():
 
 
 if __name__ == "__main__":
+    if sys.stdout is None:  # pythonw (scheduled task): no console, so append output to a log
+        DIR.mkdir(parents=True, exist_ok=True)
+        sys.stdout = sys.stderr = open(DIR / "sync.log", "a", encoding="utf-8")
+        print(f"--- {datetime.now().isoformat(timespec='seconds')}")
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     {"setup": setup, "fetch": fetch, "build": build, "push": push, "sync": sync}.get(cmd, lambda: sys.exit(__doc__))()
