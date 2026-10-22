@@ -56,11 +56,13 @@ export class WorkoutView {
    * planDialog: the plan editor <dialog>. getLog/saveLog: the training log doc. exerciseById: catalog.
    * getMine(): ids of "my exercises" (listed first in the plan editor).
    * getTracker(): { source, workouts } or null. onShowMuscles(workoutId): highlight a workout on the model.
+   * onSelectPlan(planId | null): a plan was tapped (or tapped again to clear): show the muscles it will train.
    */
-  constructor(root, planDialog, { getLog, saveLog, exerciseById, getMine, getTracker, onShowMuscles }) {
-    Object.assign(this, { root, planDialog, getLog, saveLog, exerciseById, getMine, getTracker, onShowMuscles });
+  constructor(root, planDialog, { getLog, saveLog, exerciseById, getMine, getTracker, onShowMuscles, onSelectPlan }) {
+    Object.assign(this, { root, planDialog, getLog, saveLog, exerciseById, getMine, getTracker, onShowMuscles, onSelectPlan });
     this.timer = null;
     this.editingPlan = null;
+    this.selectedPlan = null; // plan whose muscles are shown on the model
 
     root.addEventListener("click", (e) => this.onClick(e));
     root.addEventListener("change", (e) => {
@@ -71,14 +73,24 @@ export class WorkoutView {
     this.setupPlanDialog();
   }
 
+  /** Select a plan (null clears); the app colors the muscles it will train. */
+  selectPlan(id) {
+    this.selectedPlan = id;
+    this.root.querySelectorAll("[data-select-plan]").forEach((li) => li.classList.toggle("plan-active", li.dataset.selectPlan === id));
+    this.onSelectPlan?.(id);
+  }
+
   // ---------- actions
 
   onClick(e) {
-    const t = e.target.closest("[data-workout],[data-tick],[data-start-plan],[data-edit-plan],[data-show-workout],[data-delete-workout]");
+    // buttons inside a plan row match before the row itself (closest = nearest)
+    const t = e.target.closest("[data-workout],[data-tick],[data-start-plan],[data-edit-plan],[data-show-workout],[data-delete-workout],[data-select-plan]");
     if (!t) return;
     const log = this.getLog();
     const running = activeWorkout(log);
     const action = t.dataset.workout;
+
+    if (t.dataset.selectPlan) return this.selectPlan(this.selectedPlan === t.dataset.selectPlan ? null : t.dataset.selectPlan);
 
     if (t.dataset.startPlan !== undefined && !running) return this.start(log, t.dataset.startPlan || null);
     if (t.dataset.editPlan !== undefined) return this.openPlan(t.dataset.editPlan || null);
@@ -320,7 +332,7 @@ export class WorkoutView {
     if (running) return;
     const list = box.querySelector("ul");
     list.replaceChildren(
-      ...log.plans.map((p) => el("li", {},
+      ...log.plans.map((p) => el("li", { className: p.id === this.selectedPlan ? "plan-active" : "", dataset: { selectPlan: p.id }, title: "Show the muscles this workout trains" },
         el("div", { className: "li-text" },
           el("span", { textContent: p.name }),
           // one line per exercise: a joined line wrapped mid-exercise ("Pull-up 3, 2, / 2")

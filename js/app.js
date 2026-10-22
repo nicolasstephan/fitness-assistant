@@ -25,6 +25,7 @@ const state = {
   group: null, // selected muscle group id (muscles tab)
   tab: "exercises", // panel tab, sets the model's display: "volume" | "exercises" (Training) | "muscles"
   workoutFocus: null, // workout id whose trained muscles are shown on the model
+  planFocus: null, // workout plan id whose muscles are shown in green
 };
 
 // ---------- highlighting
@@ -37,9 +38,16 @@ function refresh() {
   const primary = new Set();
   const secondary = new Set();
   const focus = state.tab === "exercises" && state.workoutFocus && workoutMuscles(trainingLog.doc, state.workoutFocus, exerciseById);
+  // a tapped workout plan: the muscles it will train, in green (its own data color)
+  const plan = state.tab === "exercises" && !focus && state.planFocus ? trainingLog.doc.plans.find((p) => p.id === state.planFocus) : null;
   if (focus) {
     focus.primary.forEach((g) => primary.add(g));
     focus.secondary.forEach((g) => secondary.add(g));
+  } else if (plan) {
+    for (const item of plan.items) {
+      exerciseById.get(item.exercise)?.primary.forEach((g) => primary.add(g));
+      exerciseById.get(item.exercise)?.secondary.forEach((g) => secondary.add(g));
+    }
   } else if (state.tab === "muscles") {
     if (state.group) primary.add(state.group);
   } else if (state.tab === "exercises") {
@@ -50,19 +58,51 @@ function refresh() {
   }
   // a muscle that is a main mover for any selected exercise is listed as primary only
   for (const g of primary) secondary.delete(g);
-  viewer.setHighlight([...primary], [...secondary]);
+  viewer.setHighlight(plan ? [] : [...primary], plan ? [] : [...secondary]);
   writeHash();
 
   document.querySelectorAll("#exercise-list li").forEach((li) => li.classList.toggle("active", state.exercises.has(li.dataset.id)));
   document.querySelectorAll("#group-list li").forEach((li) => li.classList.toggle("active", li.dataset.id === state.group));
-  $("#legend-highlight").hidden = state.tab === "volume";
+  $("#legend-highlight").hidden = state.tab === "volume" || !!plan; // the plan's info box has its own green key
   $("#legend-volume").hidden = state.tab !== "volume";
   if (state.tab === "volume") showVolume();
-  else {
+  else if (plan) {
+    const css = getComputedStyle(document.documentElement);
+    const colors = new Map([...secondary].map((g) => [g, css.getPropertyValue("--plan-2").trim()]));
+    primary.forEach((g) => colors.set(g, css.getPropertyValue("--plan-1").trim()));
+    viewer.setGroupColors(colors);
+    showPlanSummary(plan, primary, secondary);
+  } else {
     viewer.setGroupColors(null);
     if (focus) showWorkoutSummary(focus);
     else showSummary(primary, secondary);
   }
+}
+
+/** Info box for a tapped plan: the muscles it will train, main and assisting, with the green key. */
+function showPlanSummary(plan, primary, secondary) {
+  const info = $("#info");
+  const names = (set) => [...set].map((g) => groupById.get(g)?.label ?? g).join(", ");
+  const line = (cls, text) => {
+    const div = document.createElement("div");
+    if (cls === "plan-2") div.className = "muted";
+    const dot = document.createElement("span");
+    dot.className = `dot ${cls}`;
+    div.append(dot, text);
+    return div;
+  };
+  const head = document.createElement("strong");
+  head.textContent = `${plan.name} will train`; // plan names are user text: textContent only
+  info.replaceChildren(head, line("plan-1", names(primary) || "—"));
+  if (secondary.size) info.appendChild(line("plan-2", names(secondary)));
+  info.hidden = false;
+}
+
+/** Any other selection on the Training tab ends the plan preview. */
+function clearPlanFocus() {
+  if (!state.planFocus) return;
+  state.planFocus = null;
+  workoutView.selectPlan(null);
 }
 
 /** Select a panel tab; the model's display follows it (see refresh). */
@@ -76,6 +116,7 @@ function selectTab(name) {
 
 /** Show which muscles a workout trained: highlight on the model + sets per muscle group. */
 function showWorkoutMuscles(workoutId) {
+  clearPlanFocus();
   state.exercises.clear();
   state.workoutFocus = workoutId;
   selectTab("exercises");
@@ -338,6 +379,7 @@ $("#exercise-list").addEventListener("click", (e) => {
   const li = e.target.closest("li");
   if (!li) return;
   const id = li.dataset.id;
+  clearPlanFocus();
   state.workoutFocus = null;
   state.exercises.has(id) ? state.exercises.delete(id) : state.exercises.add(id);
   viewer.setSelected(null);
@@ -351,6 +393,7 @@ $("#exercise-search").addEventListener("keydown", (e) => {
   renderSearch();
 });
 $("#clear-selection").addEventListener("click", () => {
+  clearPlanFocus();
   state.workoutFocus = null;
   state.exercises.clear(); // Training's selection only; the Muscles tab keeps its own
   viewer.setSelected(null);
@@ -518,6 +561,15 @@ const workoutView = new WorkoutView($("#exercises-tab"), $("#plan-dialog"), {
   getMine: () => state.mine,
   getTracker: () => (health.doc ? { source: "WHOOP", workouts: health.doc.workouts } : null),
   onShowMuscles: showWorkoutMuscles,
+  onSelectPlan: (id) => {
+    state.planFocus = id;
+    if (id) {
+      state.exercises.clear();
+      state.workoutFocus = null;
+      viewer.setSelected(null);
+    }
+    refresh();
+  },
 });
 
 // ---------- daily check-in
@@ -553,7 +605,7 @@ $("#sync-open").addEventListener("click", openSyncDialog);
 $("#theme-mode").value = getThemeMode();
 $("#theme-mode").addEventListener("change", (e) => setThemeMode(e.target.value));
 addEventListener("themechange", () => {
-  if (state.tab === "volume") showVolume();
+  if (state.tab === "volume" || state.planFocus) refresh(); // heatmap / plan greens come from CSS tokens
   if (document.body.dataset.view === "health") health.render();
   if (document.body.dataset.view === "today") checkin.render();
 });
