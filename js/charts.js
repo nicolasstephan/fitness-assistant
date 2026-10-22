@@ -68,11 +68,29 @@ export function linearTrend(points) {
   const se = den ? Math.sqrt(ssRes / (n - 2) / den) : 0;
   const tStat = se ? slope / se : 0;
   const t0 = ps[0].t, t1 = ps.at(-1).t;
-  return { at, t0, t1, delta: at(t1) - at(t0), tStat };
+  return { at, t0, t1, n, delta: at(t1) - at(t0), tStat };
 }
 
-function drawTrend(svg, trend, x, y) {
-  svgEl("line", { x1: x(trend.t0), y1: y(trend.at(trend.t0)), x2: x(trend.t1), y2: y(trend.at(trend.t1)), class: "trend" }, svg);
+/** One trend or several (e.g. one per device), each drawn over its own time span. */
+const trendList = (trend) => [].concat(trend ?? []).filter(Boolean);
+
+function drawTrends(svg, trend, x, y) {
+  for (const tr of trendList(trend)) {
+    svgEl("line", { x1: x(tr.t0), y1: y(tr.at(tr.t0)), x2: x(tr.t1), y2: y(tr.at(tr.t1)), class: "trend" }, svg);
+  }
+}
+
+/** Labeled vertical lines [{ t, label }], e.g. where the data switches from WHOOP to Polar. */
+function drawMarks(svg, marks, x, width, height) {
+  for (const m of marks ?? []) {
+    const px = x(m.t);
+    if (px < PAD.left || px > width - PAD.right) continue;
+    svgEl("line", { x1: px, x2: px, y1: PAD.top, y2: height - PAD.bottom, class: "mark" }, svg);
+    // label on the side with more room
+    const right = px < width - PAD.right - 40;
+    // at the bottom of the plot: the top holds the "No data" label of a gap that often ends here
+    svgEl("text", { x: px + (right ? 4 : -4), y: height - PAD.bottom - 5, class: "mark-label", "text-anchor": right ? "start" : "end" }, svg).textContent = m.label;
+  }
 }
 
 /** Shared hover tooltip for a chart container. Content is built with textContent only. */
@@ -129,8 +147,9 @@ function drawGaps(svg, gaps, x, width, height) {
     const x0 = Math.max(PAD.left, x(g.t0)), x1 = Math.min(width - PAD.right, x(g.t1));
     if (x1 - x0 < 1) continue;
     svgEl("rect", { x: x0, y: PAD.top, width: x1 - x0, height: height - PAD.top - PAD.bottom, class: "gap" }, svg);
+    // label at the top of the band: in the middle it collided with the end label of the line
     if (x1 - x0 >= 56) {
-      svgEl("text", { x: (x0 + x1) / 2, y: PAD.top + (height - PAD.top - PAD.bottom) / 2, class: "gap-label", "text-anchor": "middle", "dominant-baseline": "middle" }, svg).textContent = "No data";
+      svgEl("text", { x: (x0 + x1) / 2, y: PAD.top + 14, class: "gap-label", "text-anchor": "middle" }, svg).textContent = "No data";
     }
   }
 }
@@ -169,6 +188,7 @@ export function lineChart(container, points, opts) {
 
   yAxis(svg, ticks, y, PAD.left, width - PAD.right, opts.tickFormat ?? fmt);
   drawGaps(svg, opts.gaps, x, width, height);
+  drawMarks(svg, opts.marks, x, width, height);
   const tt = timeTicks(t0, t1, width - PAD.left - PAD.right);
   for (const t of tt.ticks) {
     svgEl("text", { x: x(t), y: height - 6, class: "tick", "text-anchor": "middle" }, svg).textContent = tt.fmt(t);
@@ -185,7 +205,7 @@ export function lineChart(container, points, opts) {
     return d;
   };
   svgEl("path", { d: pathOf(points), class: smooth ? "line faint" : "line", stroke: opts.color }, svg);
-  if (opts.trend) drawTrend(svg, opts.trend, x, y);
+  drawTrends(svg, opts.trend, x, y);
   if (smooth) svgEl("path", { d: pathOf(smooth), class: "line", stroke: opts.color }, svg);
 
   const main = smooth ?? points;
@@ -219,7 +239,8 @@ export function lineChart(container, points, opts) {
     const rows = [];
     if (s) rows.push({ value: `${fmt(s.v)}${unit}`, label: opts.smooth.label, color: opts.color });
     rows.push({ value: `${fmt(best.v)}${unit}`, label: smooth ? opts.baseLabel : "", color: smooth ? null : opts.color });
-    if (opts.trend) rows.push({ value: `${fmt(opts.trend.at(best.t))}${unit}`, label: "trend" });
+    const tr = trendList(opts.trend).find((x) => best.t >= x.t0 && best.t <= x.t1);
+    if (tr) rows.push({ value: `${fmt(tr.at(best.t))}${unit}`, label: tr.source ? `trend (${tr.source})` : "trend" });
     tip.show(x(best.t), y((s ?? best).v), opts.describe(best.t), rows);
   };
   hit.addEventListener("pointermove", move);
@@ -251,7 +272,9 @@ export function stackedColumns(container, rows, series, opts) {
   const t0 = rows[0].t, t1 = rows.at(-1).t;
   const xCenter = (i) => PAD.left + band * (i + 0.5);
   // gaps in time -> pixels across the column bands
-  drawGaps(svg, opts.gaps, (t) => PAD.left + band / 2 + ((t - t0) / (t1 - t0 || 1)) * (band * (rows.length - 1)), width, height);
+  const xBand = (t) => PAD.left + band / 2 + ((t - t0) / (t1 - t0 || 1)) * (band * (rows.length - 1));
+  drawGaps(svg, opts.gaps, xBand, width, height);
+  drawMarks(svg, opts.marks, xBand, width, height);
   const tt = timeTicks(t0, t1, plotW);
   for (const t of tt.ticks) {
     const i = Math.round(((t - t0) / (t1 - t0 || 1)) * (rows.length - 1));
@@ -293,7 +316,7 @@ export function stackedColumns(container, rows, series, opts) {
   });
 
   // rolling average and trend of the column totals, mapped onto the column centers
-  if (opts.trend || opts.smooth) {
+  if (trendList(opts.trend).length || opts.smooth) {
     const span = t1 - t0 || 1;
     const xT = (t) => xCenter(0) + ((t - t0) / span) * (xCenter(rows.length - 1) - xCenter(0));
     const overlay = svgEl("g", { "pointer-events": "none" }, svg);
@@ -307,7 +330,7 @@ export function stackedColumns(container, rows, series, opts) {
       }
       svgEl("path", { d, class: "line overlay" }, overlay);
     }
-    if (opts.trend) drawTrend(overlay, opts.trend, xT, y);
+    drawTrends(overlay, opts.trend, xT, y);
   }
 }
 

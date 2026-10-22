@@ -90,6 +90,9 @@ Settings: `<select>` with System / Light / Dark calling `setThemeMode()`.
 - Form fields at least 16px (iOS zooms otherwise); tap targets at least 40px.
 - A panel under a 3D view or map gets at least 60% of the height and can expand to full screen.
 - No horizontal page scroll; wide tables scroll inside their card.
+- Floating UI over a 3D view stays compact (one toolbar row, dropdown instead of a button row), and the
+  model is fitted into the area the overlays leave free (fitness-assistant: `viewer.setInsets`).
+- Text at least 12px, including chart axes; secondary text uses `--text-dim`, not lighter.
 
 ## Before shipping
 - Check System, Light and Dark, and switch the system setting while the app is open.

@@ -24,6 +24,7 @@ export class MuscleViewer {
     this.highlight = { primary: new Set(), secondary: new Set() };
     this.selected = null; // mesh
     this.xray = false;
+    this.insets = { top: 0, bottom: 0 }; // px of the stage covered by floating UI
     this.onPick = () => {};
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -124,9 +125,26 @@ export class MuscleViewer {
     this.anim = { from, to, t0: performance.now(), duration: 600 };
   }
 
+  /**
+   * Floating UI covers `top` / `bottom` px of the stage: the body is fitted into the free band
+   * between them and centered there (view offset), and the camera eases to the new distance.
+   */
+  setInsets(top, bottom) {
+    if (Math.abs(top - this.insets.top) < 2 && Math.abs(bottom - this.insets.bottom) < 2) return;
+    this.insets = { top, bottom };
+    this.resize();
+    if (!this.height) return;
+    const from = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.controls.target));
+    const to = from.clone();
+    to.radius = this.fitDistance();
+    this.anim = { from, to, t0: performance.now(), duration: 300 };
+  }
+
   fitDistance() {
     const vFov = THREE.MathUtils.degToRad(this.camera.fov);
-    const fitH = (this.height * 1.08) / 2 / Math.tan(vFov / 2);
+    const h = this.container.clientHeight;
+    const free = h ? Math.max(0.35, (h - this.insets.top - this.insets.bottom) / h) : 1;
+    const fitH = (this.height * 1.08) / 2 / Math.tan(vFov / 2) / free;
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * this.camera.aspect);
     const fitW = (this.height * 0.5) / 2 / Math.tan(hFov / 2);
     return Math.max(fitH, fitW);
@@ -215,6 +233,10 @@ export class MuscleViewer {
     if (!w || !h) return;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
+    // shift the image so the body's center sits in the middle of the uncovered band
+    const shift = Math.round((this.insets.bottom - this.insets.top) / 2);
+    if (shift) this.camera.setViewOffset(w, h, 0, shift, w, h);
+    else this.camera.clearViewOffset();
     this.camera.updateProjectionMatrix();
     this.requestRender();
   }

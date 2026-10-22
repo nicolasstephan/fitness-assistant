@@ -2,6 +2,8 @@
 
 https://nicolasstephan.github.io/fitness-assistant/
 
+Desktop shortcut (Windows): `powershell -File tools/make_shortcut.ps1` opens the site in its own Chrome/Edge app window, with the hub icon `icons/fitness-assistant.ico`.
+
 ## Health data
 
 The Health view reads `health/whoop.json` (WHOOP export, `tools/import_whoop.py`) and `health/polar.json` from the private `fitness-data` repo and merges them per day.

@@ -101,6 +101,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .toolbar button:hover { background: var(--chip); }
 .toolbar button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
 .toolbar .sep { width: 1px; background: var(--border); margin: 4px 2px; }
+.view-select { display: none; }
 
 .legend {
   position: absolute;
@@ -229,6 +230,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: 18px;
   line-height: 1;
 }
+/* line icons (settings, expand/collapse): 1.6px strokes in the text color */
+.icon-btn svg { width: 18px; height: 18px; display: block; margin: auto; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.panel-expand .i-collapse, .panel-expand[aria-pressed="true"] .i-expand { display: none; }
+.panel-expand[aria-pressed="true"] .i-collapse { display: block; }
 .panel-expand { display: none; }
 @media (max-width: 760px) { .panel-expand { display: inline-block; } }
 .icon-btn:hover { color: var(--text); border-color: var(--muted); }
@@ -364,7 +369,9 @@ dialog select { padding: 8px 6px; border: 1px solid var(--border); border-radius
 
 .workout-plans { margin-bottom: 12px; }
 .workout-plans-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-.workout-plans-head h3, .workout-history h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.workout-plans-head h3, .workout-history h3, .section-head h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.section-head { margin: 4px 0 8px; }
+.workout-history small.when { color: var(--text); opacity: 0.75; }
 .workout-plans-head span { display: flex; gap: 6px; }
 .workout-plans .list li { cursor: default; }
 .workout-history h3 { margin: 18px 0 4px; }
@@ -389,8 +396,8 @@ dialog select { padding: 8px 6px; border: 1px solid var(--border); border-radius
 .plan-row [data-add-set] { margin-top: 8px; }
 #plan-add { margin-top: 10px; }
 
-.credits { padding: 10px 16px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
 .credits a { color: inherit; }
+dialog h3.dialog-h { margin: 16px 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 
 .title-actions { display: flex; align-items: center; gap: 6px; }
 .ghost.small { padding: 5px 10px; font-size: 13px; border-radius: 8px; }
@@ -429,8 +436,11 @@ body[data-view="health"] .layout { display: none; }
 .good { color: var(--good-text); }
 .bad { color: var(--bad-text); }
 .tile-delta.good, .tile-delta.bad { font-weight: 500; }
+.tile.sparse .tile-value { color: var(--muted); } /* average of only a few days */
 
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 12px; margin-top: 12px; }
+.card-group { margin-top: 24px; }
+.card-group > h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 12px; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; min-width: 0; }
 .card > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .card h2 { margin: 0; font-size: 15px; }
@@ -442,7 +452,7 @@ body[data-view="health"] .layout { display: none; }
 .card-note { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
 
 .legend-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-.legend-row i.line-key { width: 14px; height: 2px; border-radius: 1px; vertical-align: middle; }
+.legend-row i.line-key { width: 14px; height: 3px; border-radius: 1px; vertical-align: middle; }
 .trend-verdict { margin-left: auto; font-weight: 600; color: var(--text); }
 .trend-verdict.good { color: var(--good-text); }
 .trend-verdict.bad { color: var(--bad-text); }
@@ -451,13 +461,15 @@ body[data-view="health"] .layout { display: none; }
 .chart { position: relative; }
 .chart svg { display: block; overflow: visible; }
 .chart .grid { stroke: var(--grid); stroke-width: 1; }
-.chart .tick { fill: var(--axis-ink); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .tick { fill: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
 .chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .dot { stroke: var(--panel); stroke-width: 2; }
 .chart .end-label { fill: var(--text); font-size: 12px; font-weight: 600; }
-.chart .line.faint { stroke-width: 1.5; opacity: 0.3; }
+.chart .line.faint { stroke-width: 1.5; opacity: 0.5; }
 .chart .line.overlay { stroke: var(--text); }
-.legend-row i.line-key.faint { opacity: 0.3; }
+.legend-row i.line-key.faint { opacity: 0.5; }
+.chart .mark { stroke: var(--text-dim); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart .mark-label { fill: var(--text-dim); font-size: 12px; }
 .chart .trend { stroke: var(--trend); stroke-width: 1.5; stroke-linecap: round; }
 .chart .gap { fill: var(--chip); }
 .chart .gap-label { fill: var(--muted); font-size: 12px; }
@@ -503,9 +515,14 @@ body[data-view="health"] .layout { display: none; }
   .panel { border-left: 0; border-top: 1px solid var(--border); }
   .panel-head h1 { font-size: 15px; }
   .panel-head { padding-top: 6px; }
-  .legend { top: 60px; }
-  .info { font-size: 13px; padding: 8px 12px; max-width: none; }
-  .toolbar button { padding: 6px 8px; font-size: 14px; }
+  /* the stage is small here: compact overlays, and the model is fitted between them (viewer.setInsets) */
+  .toolbar { top: 8px; padding: 3px; }
+  .toolbar button { padding: 5px 8px; font-size: 14px; }
+  .toolbar [data-view] { display: none; }
+  .view-select { display: block; border: 0; border-radius: 7px; background: var(--chip); color: var(--text); font: inherit; font-size: 14px; padding: 4px 6px; }
+  #legend-highlight { display: none; } /* the info box shows the same red / orange dots with names */
+  .legend { top: 52px; left: 8px; right: 8px; flex-direction: row; flex-wrap: nowrap; gap: 10px; font-size: 12px; white-space: nowrap; overflow-x: auto; }
+  .info { left: 8px; right: 8px; bottom: 8px; font-size: 12px; padding: 6px 10px; max-width: none; max-height: 24%; overflow-y: auto; }
 }
 
 /* iOS zooms into any focused field below 16px and stays zoomed */

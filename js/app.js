@@ -241,8 +241,7 @@ $("#health-open").addEventListener("click", () => showView("health"));
 function setPanelExpanded(on) {
   document.body.classList.toggle("panel-expanded", on);
   const btn = $("#panel-expand");
-  btn.setAttribute("aria-pressed", String(on));
-  btn.textContent = on ? "⤡" : "⤢";
+  btn.setAttribute("aria-pressed", String(on)); // the CSS swaps the expand / collapse icon
   btn.title = btn.ariaLabel = on ? "Show model" : "Expand panel";
   try { localStorage.setItem("panelExpanded", on ? "1" : ""); } catch {}
 }
@@ -365,7 +364,31 @@ document.querySelectorAll("[role=tab]").forEach((tab) =>
 
 // ---------- toolbar
 
-document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => viewer.setView(b.dataset.view)));
+document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => {
+  viewer.setView(b.dataset.view);
+  $("#view-select").value = b.dataset.view;
+}));
+// phone: one dropdown instead of four view buttons, so the toolbar fits on one line
+$("#view-select").addEventListener("change", (e) => viewer.setView(e.target.value));
+
+// keep the model clear of the toolbar, legend and info box floating over the stage
+function updateInsets() {
+  const stage = $(".stage").getBoundingClientRect();
+  // only overlays over the middle third count (where the body is); a legend at the left edge does not
+  const mid = stage.left + stage.width / 2;
+  const covers = (el) => {
+    if (el.hidden || el.offsetParent === null) return false;
+    const r = el.getBoundingClientRect();
+    return r.left < mid + stage.width / 6 && r.right > mid - stage.width / 6;
+  };
+  const top = Math.max(0, ...[".toolbar", "#legend-highlight", "#legend-volume"]
+    .map((s) => $(s)).filter(covers).map((el) => el.getBoundingClientRect().bottom - stage.top));
+  const info = $("#info");
+  const bottom = covers(info) ? stage.bottom - info.getBoundingClientRect().top : 0;
+  viewer.setInsets(top + 6, bottom + 6);
+}
+const insetObserver = new ResizeObserver(updateInsets);
+[".stage", ".toolbar", "#info", "#legend-highlight", "#legend-volume"].forEach((s) => insetObserver.observe($(s)));
 
 function toggle(btn, fn) {
   btn.addEventListener("click", () => {

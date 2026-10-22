@@ -34,6 +34,9 @@
         <button data-view="back">Back</button>
         <button data-view="left">Left</button>
         <button data-view="right">Right</button>
+        <select id="view-select" class="view-select" aria-label="View">
+          <option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option>
+        </select>
         <span class="sep"></span>
         <button id="toggle-xray" aria-pressed="false">X-ray</button>
         <button id="toggle-skeleton" aria-pressed="true">Skeleton</button>
@@ -56,8 +59,13 @@
           <h1>Fitness Assistant</h1>
           <span class="title-actions">
             <button id="health-open" class="ghost small">Health</button>
-            <button id="panel-expand" class="icon-btn panel-expand" aria-pressed="false" aria-label="Expand panel" title="Expand panel">⤢</button>
-            <button id="sync-open" class="icon-btn" aria-label="Settings" title="Settings">⚙</button>
+            <button id="panel-expand" class="icon-btn panel-expand" aria-pressed="false" aria-label="Expand panel" title="Expand panel">
+              <svg class="i-expand" viewBox="0 0 20 20" aria-hidden="true"><path d="M12 3h5v5M17 3l-6 6M8 17H3v-5M3 17l6-6"/></svg>
+              <svg class="i-collapse" viewBox="0 0 20 20" aria-hidden="true"><path d="M16 9h-5V4M11 9l6-6M4 11h5v5M9 11l-6 6"/></svg>
+            </button>
+            <button id="sync-open" class="icon-btn" aria-label="Settings" title="Settings">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M4 14h12"/><circle cx="8" cy="6" r="2"/><circle cx="12.5" cy="14" r="2"/></svg>
+            </button>
           </span>
         </div>
         <button id="sync-status" class="sync-status" type="button"></button>
@@ -81,6 +89,7 @@
           <p id="plans-hint" class="hint">Compose a workout from exercises and sets, then start it to tick off sets with a timer running.</p>
           <ul class="list"></ul>
         </section>
+        <div class="section-head"><h3>Exercises</h3></div>
         <div class="search-row">
           <input id="exercise-search" type="search" placeholder="Search to add exercises…" autocomplete="off">
           <button id="clear-selection" class="ghost">Clear</button>
@@ -149,11 +158,6 @@
         <div class="checkin-chart" hidden><h4>Stress</h4><div id="checkin-stress-chart"></div></div>
         <div class="checkin-chart" hidden><h4>Perceived fitness</h4><div id="checkin-fitness-chart"></div></div>
       </div>
-
-      <footer class="credits">
-        Anatomy: <a href="https://www.z-anatomy.com" target="_blank" rel="noopener">Z-Anatomy</a> (CC BY-SA 4.0),
-        based on <a href="https://dbarchive.biosciencedbc.jp/en/bodyparts3d/" target="_blank" rel="noopener">BodyParts3D</a> © DBCLS (CC BY-SA 2.1 JP)
-      </footer>
     </aside>
   </div>
 
@@ -173,7 +177,7 @@
     </div>
     <p id="health-empty" class="health-empty" hidden></p>
     <section id="health-tiles" class="tiles"></section>
-    <section id="health-cards" class="cards"></section>
+    <div id="health-cards"></div>
   </main>
 
   <dialog id="log-dialog" class="log-dialog">
@@ -236,7 +240,8 @@
 
   <dialog id="sync-dialog">
     <form>
-      <h2>Sync with GitHub</h2>
+      <h2>Settings</h2>
+      <h3 class="dialog-h">Sync with GitHub</h3>
       <p class="hint">Your data is saved as <code>profile.json</code> in a private GitHub repo, so it's the same on all your devices.</p>
       <ol class="hint steps">
         <li>Create a <strong>private</strong> repo, e.g. <code>fitness-data</code>.</li>
@@ -250,6 +255,11 @@
       <label>Appearance<select id="theme-mode">
         <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
       </select></label>
+      <h3 class="dialog-h">About</h3>
+      <p class="hint credits">
+        Anatomy: <a href="https://www.z-anatomy.com" target="_blank" rel="noopener">Z-Anatomy</a> (CC BY-SA 4.0),
+        based on <a href="https://dbarchive.biosciencedbc.jp/en/bodyparts3d/" target="_blank" rel="noopener">BodyParts3D</a> © DBCLS (CC BY-SA 2.1 JP)
+      </p>
       <div class="dialog-actions">
         <button type="button" id="sync-disconnect" class="ghost danger">Disconnect</button>
         <span class="spacer"></span>

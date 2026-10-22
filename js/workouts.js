@@ -338,7 +338,9 @@ export class WorkoutView {
     section.querySelector("ul").replaceChildren(
       ...finished.map((w) => {
         const text = el("div", { className: "li-text" },
-          el("span", { textContent: `${w.name ? `${w.name} · ` : ""}${fmtDay(w.start)} · ${w.start.slice(11)}–${w.end.slice(11)} · ${fmtDuration(toMs(w.end) - toMs(w.start))}` }),
+          // title, then when on its own line (a combined line wrapped over 3-4 lines on a phone)
+          el("span", { textContent: w.name || "Free workout" }),
+          el("small", { className: "when", textContent: `${fmtDay(w.start)} · ${w.start.slice(11)}–${w.end.slice(11)} · ${fmtDuration(toMs(w.end) - toMs(w.start))}` }),
           el("small", { textContent: this.exercisesOf(log, w).join(" · ") || "No exercises logged" }));
         const match = tracker && matchTrackerWorkout(w, tracker.workouts);
         if (match) {
