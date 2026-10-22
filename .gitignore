@@ -11,3 +11,5 @@ Thumbs.db
 
 # personal data: lives in the private fitness-data repo, never here
 data/
+
+__pycache__/

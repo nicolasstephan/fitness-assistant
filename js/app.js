@@ -2,7 +2,7 @@ import { MuscleViewer } from "./viewer.js";
 import { EXERCISES } from "./data/exercises.js";
 import { MUSCLE_GROUPS, REGIONS, groupById } from "./data/muscle-groups.js";
 import { GitHubStore } from "./github-store.js";
-import { HealthView } from "./health.js";
+import { HealthView, mergeHealthDocs } from "./health.js";
 import { SyncedDoc, readLocal, writeLocal } from "./synced-doc.js";
 import { LogDialog, normalizeLog, mergeLogs, lastSessionText } from "./training-log.js";
 import { CheckinView, normalizeJournal, mergeJournals, localToday } from "./checkin.js";
@@ -203,13 +203,16 @@ function disconnectGitHub() {
   renderSyncStatus();
 }
 
-// ---------- health data (health/whoop.json in the data repo), cached for offline use
+// ---------- health data (health/whoop.json + health/polar.json in the data repo), cached for offline use
 
 const HEALTH_CACHE_KEY = "fa.health";
 
 async function loadHealth(cfg) {
   try {
-    const doc = await new GitHubStore({ ...cfg, path: "health/whoop.json" }).loadRaw();
+    const docs = await Promise.all(
+      ["health/whoop.json", "health/polar.json"].map((path) => new GitHubStore({ ...cfg, path }).loadRaw()),
+    );
+    const doc = mergeHealthDocs(docs);
     if (!doc) {
       health.setMessage(`No health data in ${cfg.repo} yet.`);
       return;

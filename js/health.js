@@ -1,4 +1,4 @@
-// Health dashboard: WHOOP history (health/whoop.json in the private data repo).
+// Health dashboard: WHOOP history and Polar data (health/whoop.json, health/polar.json in the private data repo).
 import { lineChart, stackedColumns, hBars, dataTable, linearTrend } from "./charts.js";
 import { checkinQuestions, supplementQuestions, localToday } from "./checkin.js";
 import { versionOn } from "./supplements.js";
@@ -24,7 +24,35 @@ const emptyDay = (date) => ({
   date, recovery: null, rhr: null, hrv: null, strain: null,
   sleep: { performance: null, asleepMin: null, deepMin: null, remMin: null, lightMin: null }, journal: {},
 });
-const hasData = (d) => d.recovery != null || d.strain != null || d.sleep.asleepMin != null;
+const hasData = (d) => d.recovery != null || d.strain != null || d.sleep.asleepMin != null || d.hrv != null || d.steps != null;
+
+/**
+ * One health document from several sources (WHOOP export, Polar AccessLink), same shape as each input.
+ * Per day the first source with data wins (WHOOP before Polar); workouts are concatenated.
+ */
+export function mergeHealthDocs(docs) {
+  docs = docs.filter((d) => d?.days?.length);
+  if (!docs.length) return null;
+  if (docs.length === 1) return { ...docs[0], sources: [sourceOf(docs[0])] };
+  const byDate = new Map();
+  for (const doc of docs) {
+    for (const d of doc.days) {
+      if (!byDate.has(d.date) || !hasData(byDate.get(d.date))) byDate.set(d.date, { ...d, source: doc.source });
+    }
+  }
+  const days = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  return {
+    version: 1,
+    source: docs.map((d) => d.source).join("+"),
+    sources: docs.map(sourceOf),
+    importedAt: docs.map((d) => d.importedAt).sort().at(-1),
+    range: { from: days[0].date, to: days.at(-1).date },
+    days,
+    workouts: docs.flatMap((d) => d.workouts.map((w) => ({ ...w, source: d.source }))).sort((a, b) => (a.start ?? "").localeCompare(b.start ?? "")),
+  };
+}
+const SOURCE_NAMES = { whoop: "WHOOP", polar: "Polar" };
+const sourceOf = (doc) => ({ name: SOURCE_NAMES[doc.source] ?? doc.source, ...doc.range, importedAt: doc.importedAt });
 
 /** Runs of 3+ days without data, as [{ t0, t1 }] from the last day with data to the next one. */
 function gapsIn(days) {
@@ -154,9 +182,12 @@ export class HealthView {
   render() {
     if (!this.doc || this.root.hidden) return;
     this.root.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-checked", b.dataset.range === this.range));
-    const { from, to } = this.doc.range;
+    const { to } = this.doc.range;
+    const sources = this.doc.sources ?? [{ name: "WHOOP", ...this.doc.range, importedAt: this.doc.importedAt }];
+    const short = (date) => new Date(tUTC(date)).toLocaleDateString(undefined, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
     this.root.querySelector("#health-source").textContent =
-      `WHOOP · ${fmtDay(tUTC(from))} – ${fmtDay(tUTC(to))} · imported ${new Date(this.doc.importedAt).toLocaleDateString()}` +
+      sources.map((s) => `${s.name} ${short(s.from)} – ${short(s.to)}`).join(" · ") +
+      ` · updated ${new Date(this.doc.importedAt).toLocaleDateString()}` +
       (to < localToday() ? ` · no data since then, re-import to fill the gap` : "");
 
     const s = this.slice();
@@ -278,10 +309,17 @@ export class HealthView {
     const round = (unit) => (d) => `${Math.round(d)} ${unit === "pts" && Math.round(d) === 1 ? "pt" : unit}`;
     const oneDecimal = (unit) => (d) => `${d.toFixed(1)}${unit ? ` ${unit}` : ""}`;
     const pct = { ticks: [0, 25, 50, 75, 100], unit: "%", format: (v) => `${Math.round(v)}` };
-    lineCard("Recovery", "Morning recovery score, %", (d) => d.recovery, pct, "Recovery %", round("pts"), true);
+    const fromPolar = cur.some((d) => d.source === "polar" && hasData(d));
+    const fromWhoop = cur.some((d) => d.source !== "polar" && hasData(d));
+    const both = fromPolar && fromWhoop;
+    if (fromWhoop) lineCard("Recovery", "WHOOP morning recovery score, %", (d) => d.recovery, pct, "Recovery %", round("pts"), true);
     lineCard("Heart rate variability", "During sleep, ms", (d) => d.hrv, { unit: "ms", format: (v) => `${Math.round(v)}` }, "HRV (ms)", round("ms"), true);
-    lineCard("Resting heart rate", "bpm", (d) => d.rhr, { unit: "bpm", format: (v) => `${Math.round(v)}` }, "RHR (bpm)", oneDecimal("bpm"), false);
-    lineCard("Sleep score", "WHOOP sleep performance: sleep you got vs. sleep you needed, %", (d) => d.sleep.performance, pct, "Sleep score %", round("pts"), true);
+    lineCard("Resting heart rate",
+      fromPolar ? `bpm${both ? " · WHOOP resting HR, then" : " ·"} Polar average HR during sleep (reads a few bpm higher)` : "bpm",
+      (d) => d.rhr, { unit: "bpm", format: (v) => `${Math.round(v)}` }, "RHR (bpm)", oneDecimal("bpm"), false);
+    lineCard("Sleep score",
+      both ? "WHOOP sleep performance, then Polar sleep score, %" : fromPolar ? "Polar sleep score, 1–100" : "WHOOP sleep performance: sleep you got vs. sleep you needed, %",
+      (d) => d.sleep.performance, pct, "Sleep score %", round("pts"), true);
 
     // sleep stages, hours; rolling average and trend of the total
     const stages = [
@@ -309,7 +347,9 @@ export class HealthView {
         ...(sleepTrend ? [{ name: "Trend (total)", color: trendColor, line: true }] : [])],
       long ? verdict(sleepTrend, (d) => `${Math.round(d * 60)} min`, true) : null);
 
-    lineCard("Day strain", "WHOOP strain, 0–21", (d) => d.strain, { ticks: [0, 7, 14, 21], tickFormat: (v) => `${v}`, format: (v) => v.toFixed(1) }, "Strain", oneDecimal(""), null);
+    if (fromWhoop) lineCard("Day strain", "WHOOP strain, 0–21", (d) => d.strain, { ticks: [0, 7, 14, 21], tickFormat: (v) => `${v}`, format: (v) => v.toFixed(1) }, "Strain", oneDecimal(""), null);
+    if (cur.some((d) => d.cardioLoad != null)) lineCard("Cardio load", "Polar daily cardio load (TRIMP-based)", (d) => d.cardioLoad, { format: (v) => v.toFixed(0) }, "Cardio load", round(""), null);
+    if (cur.some((d) => d.steps != null)) lineCard("Steps", "Per day, Polar", (d) => d.steps, { format: (v) => `${Math.round(v)}` }, "Steps", round("steps"), true);
 
     // workouts by activity (hours), top 6 + Other
     const byActivity = new Map();
@@ -449,7 +489,7 @@ export class HealthView {
     const total = minutes.reduce((a, b) => a + b, 0);
     const rows = minutes.map((m, i) => ({ label: i ? `Zone ${i}` : "Below zone 1", value: m }));
     const pct = (m) => (total ? `${Math.round((m / total) * 100)}%` : "–");
-    this.card(cards, "Heart-rate zones", "Workout time in each WHOOP heart-rate zone",
+    this.card(cards, "Heart-rate zones", "Workout time in each heart-rate zone",
       (el) => (total ? hBars(el, rows, { color: css("--series-1"), format: (v) => `${hm(v)} h · ${pct(v)}` }) : (el.textContent = "No workouts in this period.")),
       [{ label: "Zone", get: (r) => r.label }, { label: "Time (h)", get: (r) => hm(r.value), num: true }, { label: "Share", get: (r) => pct(r.value), num: true }],
       rows);

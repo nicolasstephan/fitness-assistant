@@ -1,9 +1,11 @@
 """Polar AccessLink (API v3) client for the Fitness Assistant.
 
     python tools/polar.py setup            # once: store client id/secret, log in via the browser, register the user
-    python tools/polar.py fetch            # download everything the API offers into data/polar/raw/
+    python tools/polar.py fetch            # download everything the API offers into data/polar/raw/ and merge into history.json
+    python tools/polar.py build            # history.json -> ../fitness-data/health/polar.json (same shape as whoop.json)
+    python tools/polar.py sync             # fetch + build + commit/push the data repo (the scheduled task runs this)
 
-Credentials and downloads live in data/polar/ (data/ is git-ignored; personal data never goes in this repo).
+Credentials, raw downloads and the merged history live in data/polar/ (data/ is git-ignored; personal data never goes in this repo).
 Client registration: https://admin.polaraccesslink.com (log in with the Polar Flow account), redirect URL
 http://localhost:5000/oauth2_callback. The access token does not expire unless revoked.
 
@@ -13,13 +15,15 @@ Only standard library, so it runs with any Python 3.10+.
 """
 import base64
 import json
+import re
 import secrets
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -27,6 +31,9 @@ ROOT = Path(__file__).resolve().parent.parent
 DIR = ROOT / "data" / "polar"
 CRED = DIR / "credentials.json"
 RAW = DIR / "raw"
+HISTORY = DIR / "history.json"
+DATA_REPO = ROOT.parent / "fitness-data"  # local clone of the private data repo
+OUT = DATA_REPO / "health" / "polar.json"
 
 AUTH_URL = "https://flow.polar.com/oauth2/authorization"
 TOKEN_URL = "https://polarremote.com/v2/oauth2/token"
@@ -171,8 +178,137 @@ def fetch():
     print(f"{'activities (365 d)':28} {len(acts)} days")
     get("continuous-hr", "/v3/users/continuous-heart-rate", **{"from": str(today - timedelta(days=27)), "to": str(today)})
     print(f"Raw data in {RAW}")
+    merge_history()
+
+
+# ---------- history: the API forgets after 28-30 days, so every fetch is merged into one file
+
+def list_of(body, key):
+    if isinstance(body, list):
+        return body
+    return (body or {}).get(key, [])
+
+
+def read_raw(name):
+    p = RAW / f"{name}.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+
+
+def merge_history():
+    h = json.loads(HISTORY.read_text(encoding="utf-8")) if HISTORY.exists() else {}
+    streams = {
+        "sleep": (list_of(read_raw("sleep"), "nights"), lambda r: r["date"]),
+        "recharge": (list_of(read_raw("nightly-recharge"), "recharges"), lambda r: r["date"]),
+        "activities": (list_of(read_raw("activities"), "activities"), lambda r: r["start_time"][:10]),
+        "cardioLoad": ([r for r in list_of(read_raw("cardio-load"), "cardio_load") if r.get("cardio_load", -1) >= 0],
+                       lambda r: r["date"]),
+        "heartRate": (list_of(read_raw("continuous-hr"), "heart_rates"), lambda r: r["date"]),
+        "exercises": (list_of(read_raw("exercises"), "exercises"), lambda r: r["id"]),
+    }
+    for name, (rows, key) in streams.items():
+        h.setdefault(name, {}).update({key(r): r for r in rows})  # newer fetch wins (today's partial day gets completed)
+    info = read_raw("physical-info")
+    if info:
+        h["physicalInfo"] = info
+    HISTORY.write_text(json.dumps(h, ensure_ascii=False), encoding="utf-8")
+    print("history:", ", ".join(f"{k} {len(v)}" for k, v in h.items() if isinstance(v, dict) and k != "physicalInfo"))
+
+
+# ---------- build: history -> health/polar.json in the private data repo (same shape as whoop.json)
+
+def minutes(iso):
+    """ISO-8601 duration ('PT1H23M45.5S') -> minutes."""
+    m = re.fullmatch(r"P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?", iso or "")
+    if not m:
+        return None
+    d, hh, mm, ss = (float(x) if x else 0 for x in m.groups())
+    return round(d * 1440 + hh * 60 + mm + ss / 60, 1)
+
+
+def build():
+    h = json.loads(HISTORY.read_text(encoding="utf-8"))
+    days = {}
+
+    def day(key):
+        return days.setdefault(key, {
+            "date": key, "recovery": None, "rhr": None, "hrv": None, "strain": None,
+            "sleep": {"onset": None, "wake": None, "performance": None, "respRate": None,
+                      "asleepMin": None, "lightMin": None, "deepMin": None, "remMin": None, "awakeMin": None},
+            "journal": {},
+        })
+
+    for k, s in h.get("sleep", {}).items():
+        d = day(k)
+        light, deep, rem = (s.get(x, 0) / 60 for x in ("light_sleep", "deep_sleep", "rem_sleep"))
+        d["sleep"].update({
+            "onset": s["sleep_start_time"][:16], "wake": s["sleep_end_time"][:16],
+            "performance": s.get("sleep_score"),
+            "asleepMin": round(light + deep + rem), "lightMin": round(light), "deepMin": round(deep), "remMin": round(rem),
+            "awakeMin": round(s.get("total_interruption_duration", 0) / 60),
+        })
+        d["sleepCycles"] = s.get("sleep_cycles")
+    for k, r in h.get("recharge", {}).items():
+        d = day(k)
+        d["hrv"] = r.get("heart_rate_variability_avg")
+        d["rhr"] = r.get("heart_rate_avg")  # Polar: average HR during sleep (WHOOP's RHR is lower)
+        d["sleep"]["respRate"] = r.get("breathing_rate_avg")
+        d["ansCharge"] = r.get("ans_charge")
+    for k, a in h.get("activities", {}).items():
+        d = day(k)
+        d.update({"steps": a.get("steps"), "kcal": a.get("calories"), "activeKcal": a.get("active_calories")})
+    for k, c in h.get("cardioLoad", {}).items():
+        day(k)["cardioLoad"] = round(c["cardio_load"], 1)
+
+    workouts = []
+    for e in h.get("exercises", {}).values():
+        dur = minutes(e.get("duration"))
+        zones = [0.0] * 5
+        for z in e.get("heart_rate_zones") or []:
+            i = z.get("index", 0) - 1
+            if 0 <= i < 5 and dur:
+                zones[i] = round(100 * (minutes(z.get("in-zone")) or 0) / dur, 1)
+        hr = e.get("heart_rate") or {}
+        sport = (e.get("detailed_sport_info") or e.get("sport") or "Other").replace("_", " ").capitalize()
+        start = e.get("start_time", "")[:16]
+        workouts.append({
+            "start": start, "end": None, "durationMin": dur, "activity": sport, "strain": None,
+            "kcal": e.get("calories"), "maxHr": hr.get("maximum"), "avgHr": hr.get("average"),
+            "zones": zones, "cardioLoad": e.get("cardio_load") or e.get("training_load"),
+        })
+    workouts.sort(key=lambda w: w["start"])
+    ordered = sorted(days.values(), key=lambda d: d["date"])
+    if not ordered:
+        sys.exit("No Polar days yet.")
+    doc = {
+        "version": 1, "source": "polar",
+        "importedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "range": {"from": ordered[0]["date"], "to": ordered[-1]["date"]},
+        "days": ordered, "workouts": workouts,
+    }
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps(doc, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+    print(f"{len(ordered)} days ({doc['range']['from']} .. {doc['range']['to']}), {len(workouts)} workouts -> {OUT}")
+
+
+def push():
+    git = ["git", "-C", str(DATA_REPO)]
+    subprocess.run(git + ["pull", "-q", "--rebase", "--autostash"], check=False)
+    subprocess.run(git + ["add", "health/polar.json"], check=True)
+    if subprocess.run(git + ["diff", "--cached", "--quiet"]).returncode == 0:
+        print("data repo: no change")
+        return
+    subprocess.run(git + ["commit", "-q", "-m", f"Polar import {date.today()}"], check=True)
+    subprocess.run(git + ["push", "-q"], check=True)
+    print("data repo: pushed")
+
+
+def sync():
+    """fetch + build + push; what the scheduled task runs."""
+    fetch()
+    build()
+    push()
 
 
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
-    {"setup": setup, "fetch": fetch}.get(cmd, lambda: sys.exit(__doc__))()
+    {"setup": setup, "fetch": fetch, "build": build, "push": push, "sync": sync}.get(cmd, lambda: sys.exit(__doc__))()
