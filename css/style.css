@@ -515,8 +515,10 @@ body:not([data-view="exercise"]) .layout { display: none; }
 .chart .dot { stroke: var(--panel); stroke-width: 2; }
 .chart .end-label { fill: var(--text); font-size: 12px; font-weight: 600; }
 .chart .line.faint { stroke-width: 1.5; opacity: 0.5; }
+.chart .band { opacity: 0.14; stroke: none; }
 .chart .line.overlay { stroke: var(--text); }
 .legend-row i.line-key.faint { opacity: 0.5; }
+.legend-row i.area-key { opacity: 0.3; }
 .chart .mark { stroke: var(--text-dim); stroke-width: 1; stroke-dasharray: 3 3; }
 .chart .mark-label { fill: var(--text-dim); font-size: 12px; }
 .chart .trend { stroke: var(--trend); stroke-width: 1.5; stroke-linecap: round; }

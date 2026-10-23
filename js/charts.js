@@ -171,13 +171,15 @@ function yAxis(svg, ticks, y, x0, x1, fmt) {
  * opts: { color, format, unit, describe(t),
  *         ticks (fixed y ticks), tickFormat,
  *         smooth: { points, label } - rolling average drawn bold; `points` then render faint,
+ *         band: { points: [{ t, lo, hi }], label } - shaded range behind the lines (breaks where lo is null),
  *         baseLabel - tooltip label for `points`, trend (from linearTrend) - straight line }
  */
 export function lineChart(container, points, opts) {
   const { svg, width, height, tip } = frame(container, opts.height ?? 180);
   const smooth = opts.smooth?.points ?? null;
   const all = smooth ? [...points, ...smooth] : points;
-  const vals = all.map((p) => p.v).filter((v) => v != null);
+  const band = opts.band?.points.filter((p) => p.lo != null) ?? [];
+  const vals = [...all.map((p) => p.v), ...band.flatMap((p) => [p.lo, p.hi])].filter((v) => v != null);
   if (!all.length) return noData(container);
   const t0 = Math.min(...all.map((p) => p.t)), t1 = Math.max(...all.map((p) => p.t));
   // no values at all: still the frame, dates and "No data" bands (fixed ticks if the chart has them)
@@ -208,6 +210,22 @@ export function lineChart(container, points, opts) {
     }
     return d;
   };
+  if (band.length) {
+    // one closed area per unbroken run of days: along hi, back along lo
+    let d = "";
+    let run = [];
+    const flush = () => {
+      if (run.length) {
+        const top = run.map((p) => `${x(p.t).toFixed(1)},${y(p.hi).toFixed(1)}`);
+        const bottom = run.reverse().map((p) => `${x(p.t).toFixed(1)},${y(p.lo).toFixed(1)}`);
+        d += `M${top.join("L")}L${bottom.join("L")}Z`;
+      }
+      run = [];
+    };
+    for (const p of opts.band.points) p.lo == null ? flush() : run.push(p);
+    flush();
+    svgEl("path", { d, class: "band", fill: opts.color }, svg);
+  }
   svgEl("path", { d: pathOf(points), class: smooth ? "line faint" : "line", stroke: opts.color }, svg);
   drawTrends(svg, opts.trend, x, y);
   if (smooth) svgEl("path", { d: pathOf(smooth), class: "line", stroke: opts.color }, svg);
@@ -252,6 +270,8 @@ export function lineChart(container, points, opts) {
     rows.push({ value: `${fmt(best.v)}${unit}`, label: smooth ? opts.baseLabel : "", color: smooth ? null : opts.color });
     const tr = trendList(opts.trend).find((x) => best.t >= x.t0 && best.t <= x.t1);
     if (tr) rows.push({ value: `${fmt(tr.at(best.t))}${unit}`, label: tr.source ? `trend (${tr.source})` : "trend" });
+    const r = band.length ? opts.band.points.find((p) => p.t === (s ?? best).t && p.lo != null) : null;
+    if (r) rows.push({ value: `${fmt(r.lo)}–${fmt(r.hi)}${unit}`, label: opts.band.label });
     tip.show(x(best.t), y((s ?? best).v), opts.describe(best.t), rows);
   };
   hit.addEventListener("pointermove", move);

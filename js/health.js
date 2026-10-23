@@ -82,6 +82,39 @@ const mean = (xs) => {
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 };
 
+/**
+ * HRV the way it is usually judged (Plews et al. 2012, Altini): on the log scale, because RMSSD is skewed,
+ * and against your own recent normal instead of a population value. Per calendar day (in place):
+ *   hrvBase - mean and SD of ln RMSSD over the 60 days before (at least 14 nights), same device only;
+ *   hrv7    - 7-day mean of ln RMSSD up to that day (at least 4 nights), as ms (geometric mean);
+ *   hrvDev  - that night's ln RMSSD minus the baseline mean (log difference, about a % change).
+ * Same device only, so the WHOOP-to-Polar switch never mixes two methods in one baseline.
+ */
+const HRV_BASE_DAYS = 60;
+const HRV_MIN_NIGHTS = 14;
+export const HRV_SWC = 0.5; // normal range = baseline mean ± 0.5 SD ("smallest worthwhile change")
+function annotateHrv(days) {
+  const ln = days.map((d) => (d.hrv > 0 ? Math.log(d.hrv) : null));
+  const src = (d) => d.source ?? "whoop";
+  days.forEach((d, i) => {
+    d.hrvBase = d.hrv7 = d.hrvDev = null;
+    if (ln[i] == null) return; // nothing drawn into a gap
+    const same = (k) => (ln[k] != null && src(days[k]) === src(d) ? ln[k] : null);
+    const base = [];
+    for (let k = Math.max(0, i - HRV_BASE_DAYS); k < i; k++) if (same(k) != null) base.push(same(k));
+    if (base.length >= HRV_MIN_NIGHTS) {
+      const m = base.reduce((a, b) => a + b, 0) / base.length;
+      const sd = Math.sqrt(base.reduce((a, b) => a + (b - m) ** 2, 0) / (base.length - 1));
+      d.hrvBase = { mean: m, sd };
+      d.hrvDev = ln[i] - m;
+    }
+    const week = [];
+    for (let k = Math.max(0, i - 6); k <= i; k++) if (same(k) != null) week.push(same(k));
+    if (week.length >= 4) d.hrv7 = Math.exp(week.reduce((a, b) => a + b, 0) / week.length);
+  });
+}
+const hrvRange = (base) => ({ lo: Math.exp(base.mean - HRV_SWC * base.sd), hi: Math.exp(base.mean + HRV_SWC * base.sd) });
+
 export class HealthView {
   constructor(root) {
     this.root = root;
@@ -132,6 +165,7 @@ export class HealthView {
         }
         : d.journal,
     }));
+    annotateHrv(days); // on every day, so the first days of the range still get a 60-day baseline
     const end = days.at(-1).t;
     const n = RANGES[this.range];
     const start = n === Infinity ? days[0].t : end - (n - 1) * DAY;
@@ -385,8 +419,55 @@ export class HealthView {
     const oneDecimal = (unit) => (d) => `${d.toFixed(1)}${unit ? ` ${unit}` : ""}`;
     const pct = { ticks: [0, 25, 50, 75, 100], unit: "%", format: (v) => `${Math.round(v)}` };
     if (fromWhoop) lineCard(sleepGroup, "Recovery", "WHOOP morning recovery score, %", (d) => d.recovery, pct, "Recovery %", round("pts"), true);
-    lineCard(sleepGroup, "Heart rate variability",
-      `RMSSD during sleep, ms${fromPolar ? ` · ${both ? "WHOOP weighted to deep sleep, then " : ""}Polar over the first ~4 h of sleep` : ""}`, (d) => d.hrv, { unit: "ms", format: (v) => `${Math.round(v)}` }, "HRV (ms)", round("ms"), true);
+    // HRV: 7-day average against your 60-day normal range (see annotateHrv), per device
+    {
+      const get = (d) => d.hrv;
+      const b = this.bucket(cur, get);
+      const avg7 = cur.map((d) => ({ t: d.t, v: d.hrv7 }));
+      const band = cur.map((d) => ({ t: d.t, ...(d.hrvBase ? hrvRange(d.hrvBase) : { lo: null, hi: null }) }));
+      const trends = long ? this.trendsFor(b.points, get, both) : [];
+      const ms = (v) => `${Math.round(v)}`;
+      const byT = new Map(cur.map((d) => [d.t, d]));
+      // short ranges: where the last 7 days stand against the normal range; long ranges: the trend verdict
+      const lastDay = [...cur].reverse().find((d) => d.hrv7 != null && d.hrvBase);
+      let status = null;
+      if (lastDay) {
+        const { lo, hi } = hrvRange(lastDay.hrvBase);
+        const where = lastDay.hrv7 < lo ? "below" : lastDay.hrv7 > hi ? "above" : "within";
+        status = { text: `7-day ${ms(lastDay.hrv7)} ms · ${where} your normal ${ms(lo)}–${ms(hi)} ms`, cls: where === "below" ? "bad" : "" };
+      }
+      // a new device starts without a baseline: say when the normal range appears
+      const latest = [...days].reverse().find((d) => d.hrv != null);
+      if (latest && !latest.hrvBase) {
+        const nights = days.filter((d) => d.hrv != null && (d.source ?? "whoop") === (latest.source ?? "whoop")).length;
+        status = { text: `Normal range from ${HRV_MIN_NIGHTS} nights on ${SOURCE_NAMES[latest.source] ?? "this device"} (${nights} so far)`, cls: "" };
+      }
+      const methods = fromPolar ? ` · ${both ? "WHOOP weighted to deep sleep, then " : ""}Polar over the first ~4 h of sleep` : "";
+      this.card(sleepGroup, "Heart rate variability",
+        `RMSSD during sleep, ms · normal range: your 60 days before, ±${HRV_SWC} SD on the log scale${methods}`,
+        (el) => lineChart(el, b.points, {
+          color: blue, describe: b.describe, trend: trends, gaps, marks, unit: "ms", format: ms,
+          smooth: { points: avg7, label: "7-day average" }, baseLabel: b.weekly ? "weekly average" : "that night",
+          band: { points: band, label: "normal range" },
+        }),
+        [
+          { label: b.weekly ? "Week of" : "Date", get: (p) => new Date(p.t).toISOString().slice(0, 10) },
+          { label: "HRV (ms)", get: (p) => (p.v == null ? null : ms(p.v)), num: true },
+          ...(b.weekly ? [] : [
+            { label: "7-day average", get: (p) => (byT.get(p.t)?.hrv7 == null ? null : ms(byT.get(p.t).hrv7)), num: true },
+            { label: "Normal range", get: (p) => { const base = byT.get(p.t)?.hrvBase; if (!base) return null; const r = hrvRange(base); return `${ms(r.lo)}–${ms(r.hi)}`; }, num: true },
+          ]),
+          ...(trends.length ? [{ label: "Trend", get: (p) => { const tr = trendAt(trends, p.t); return tr ? ms(tr.at(p.t)) : null; }, num: true }] : []),
+        ],
+        b.points,
+        [
+          { name: "7-day average", color: blue, line: true },
+          { name: b.weekly ? "Weekly average" : "Daily", color: blue, line: true, faint: true },
+          { name: "Normal range", color: blue, area: true },
+          ...(trends.length ? [{ name: trends.length > 1 ? "Trend per device" : "Trend", color: trendColor, line: true }] : []),
+        ],
+        long ? verdict(trends, round("ms"), true) : status);
+    }
     lineCard(sleepGroup, "Resting heart rate",
       fromPolar ? `bpm${both ? " · WHOOP: HR in the last deep sleep, then" : " ·"} Polar: average HR over the first ~4 h of sleep` : "bpm",
       (d) => d.rhr, { unit: "bpm", format: (v) => `${Math.round(v)}` }, "RHR (bpm)", oneDecimal("bpm"), false);
@@ -494,35 +575,43 @@ export class HealthView {
     ], rows);
   }
 
+  /**
+   * Journal answers against that night's HRV relative to your normal (hrvDev, see annotateHrv) instead of
+   * WHOOP recovery: it exists for WHOOP and Polar nights, and the per-device baseline removes the device offset.
+   */
   journalCard(cards, cur) {
     const questions = new Map();
     for (const d of cur) {
-      if (d.recovery == null) continue;
+      if (d.hrvDev == null) continue;
       for (const [q, yes] of Object.entries(d.journal)) {
         if (!questions.has(q)) questions.set(q, { yes: [], no: [] });
-        questions.get(q)[yes ? "yes" : "no"].push(d.recovery);
+        questions.get(q)[yes ? "yes" : "no"].push(d.hrvDev);
       }
     }
+    // means of log differences, shown as % above / below normal
+    const pctOf = (logDiff) => (Math.exp(logDiff) - 1) * 100;
     const rows = [...questions]
       .filter(([, v]) => v.yes.length >= 5 && v.no.length >= 5)
-      .map(([q, v]) => ({ q, nYes: v.yes.length, nNo: v.no.length, yes: mean(v.yes), no: mean(v.no), diff: mean(v.yes) - mean(v.no) }))
+      .map(([q, v]) => ({ q, nYes: v.yes.length, nNo: v.no.length, yes: pctOf(mean(v.yes)), no: pctOf(mean(v.no)), diff: pctOf(mean(v.yes) - mean(v.no)) }))
       .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
 
-    const card = this.card(cards, "Journal vs. recovery", "Average recovery on mornings after answering yes vs. no (at least 5 of each)", null, null, null);
+    const card = this.card(cards, "Journal vs. HRV",
+      "HRV on nights after answering yes vs. no, in % from your 60-day normal (at least 5 of each)", null, null, null);
     const body = card.querySelector(".card-body");
     if (!rows.length) {
       body.textContent = "Not enough journal answers in this period.";
       return;
     }
+    const signed = (v) => { const n = Math.round(v); return `${n > 0 ? "+" : n < 0 ? "−" : "±"}${Math.abs(n)}%`; };
     dataTable(body, [
       { label: "Question", get: (r) => r.q },
-      { label: "Yes", get: (r) => `${Math.round(r.yes)}% (${r.nYes})`, num: true },
-      { label: "No", get: (r) => `${Math.round(r.no)}% (${r.nNo})`, num: true },
+      { label: "Yes", get: (r) => `${signed(r.yes)} (${r.nYes})`, num: true },
+      { label: "No", get: (r) => `${signed(r.no)} (${r.nNo})`, num: true },
       {
         label: "Difference",
         get: (r) => {
           const n = Math.round(r.diff);
-          return n === 0 ? "± 0 pts" : `${n > 0 ? "▲ +" : "▼ −"}${Math.abs(n)} ${Math.abs(n) === 1 ? "pt" : "pts"}`;
+          return n === 0 ? "± 0%" : `${n > 0 ? "▲ +" : "▼ −"}${Math.abs(n)}%`;
         },
         num: true,
       },
@@ -533,7 +622,7 @@ export class HealthView {
     });
     const note = document.createElement("p");
     note.className = "card-note";
-    note.textContent = "Associations, not causes: e.g. caffeine days may also be short-sleep days.";
+    note.textContent = "Associations, not causes: e.g. caffeine days may also be short-sleep days. Single nights vary a lot, so differences of a few % are noise.";
     body.appendChild(note);
   }
 
@@ -626,6 +715,7 @@ export class HealthView {
         const sw = document.createElement("i");
         sw.style.background = s.color;
         if (s.line) sw.className = s.faint ? "line-key faint" : "line-key"; // legends mirror the mark: short stroke for lines
+        else if (s.area) sw.className = "area-key";
         item.append(sw, document.createTextNode(s.name));
         lg.appendChild(item);
       }
