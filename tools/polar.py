@@ -278,7 +278,7 @@ def build():
     def day(key):
         return days.setdefault(key, {
             "date": key, "recovery": None, "rhr": None, "hrv": None, "strain": None,
-            "sleep": {"onset": None, "wake": None, "performance": None, "respRate": None,
+            "sleep": {"onset": None, "wake": None, "performance": None, "score": None, "respRate": None,
                       "asleepMin": None, "lightMin": None, "deepMin": None, "remMin": None, "awakeMin": None},
             "journal": {},
         })
@@ -288,7 +288,9 @@ def build():
         light, deep, rem = (s.get(x, 0) / 60 for x in ("light_sleep", "deep_sleep", "rem_sleep"))
         d["sleep"].update({
             "onset": s["sleep_start_time"][:16], "wake": s["sleep_end_time"][:16],
-            "performance": s.get("sleep_score"),
+            # Polar's sleep score (1-100, composite of 6 components) is not WHOOP's sleep performance
+            # (% of sleep need): its own field, so the two never share a chart line or an average
+            "performance": None, "score": s.get("sleep_score"),
             "asleepMin": round(light + deep + rem), "lightMin": round(light), "deepMin": round(deep), "remMin": round(rem),
             "awakeMin": round(s.get("total_interruption_duration", 0) / 60),
         })
@@ -296,12 +298,17 @@ def build():
     for k, r in h.get("recharge", {}).items():
         d = day(k)
         d["hrv"] = r.get("heart_rate_variability_avg")
-        d["rhr"] = r.get("heart_rate_avg")  # Polar: average HR during sleep (WHOOP's RHR is lower)
+        # Nightly Recharge averages over ~4 h from falling asleep; WHOOP's RHR comes from the last deep-sleep phase
+        d["rhr"] = r.get("heart_rate_avg")
         d["sleep"]["respRate"] = r.get("breathing_rate_avg")
         d["ansCharge"] = r.get("ans_charge")
     for k, a in h.get("activities", {}).items():
         d = day(k)
         d.update({"steps": a.get("steps"), "kcal": a.get("calories"), "activeKcal": a.get("active_calories")})
+        # a day the band did not cover from midnight to midnight (first day worn, today so far):
+        # its steps and cardio load are not comparable with full days
+        if a.get("start_time", "")[11:16] != "00:00" or a.get("end_time", "")[11:16] < "23:50":
+            d["partialDay"] = True
     for k, c in h.get("cardioLoad", {}).items():
         day(k)["cardioLoad"] = round(c["cardio_load"], 1)
 
@@ -309,16 +316,17 @@ def build():
     for e in h.get("exercises", {}).values():
         dur = minutes(e.get("duration"))
         zones = [0.0] * 5
+        # zones 1-5 = 50-60 ... 90-100% of max HR (like WHOOP); the API numbers them 0-4
         for z in e.get("heart_rate_zones") or []:
-            i = z.get("index", 0) - 1
+            i = z.get("index", -1)
             if 0 <= i < 5 and dur:
-                zones[i] = round(100 * (minutes(z.get("in-zone")) or 0) / dur, 1)
+                zones[i] = round(100 * (minutes(z.get("in_zone")) or 0) / dur, 1)
         hr = e.get("heart_rate") or {}
         sport = (e.get("detailed_sport_info") or e.get("sport") or "Other").replace("_", " ").capitalize()
         workouts.append({
-            "start": e.get("start_time", "")[:16], "end": None, "durationMin": dur, "activity": sport, "strain": None,
+            "start": e.get("start_time", "")[:16], "end": None, "durationMin": round(dur) if dur else dur, "activity": sport, "strain": None,
             "kcal": e.get("calories"), "maxHr": hr.get("maximum"), "avgHr": hr.get("average"),
-            "zones": zones, "cardioLoad": e.get("cardio_load") or e.get("training_load"),
+            "zones": zones, "cardioLoad": round((e.get("training_load_pro") or {}).get("cardio-load") or 0, 1) or None,
         })
     workouts.sort(key=lambda w: w["start"])
     ordered = sorted(days.values(), key=lambda d: d["date"])

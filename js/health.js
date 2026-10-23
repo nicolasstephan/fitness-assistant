@@ -23,8 +23,10 @@ const categoryIndex = (activity) => WORKOUT_CATEGORIES.findIndex((c) => c.match.
 
 const emptyDay = (date) => ({
   date, recovery: null, rhr: null, hrv: null, strain: null,
-  sleep: { performance: null, asleepMin: null, deepMin: null, remMin: null, lightMin: null }, journal: {},
+  sleep: { performance: null, score: null, asleepMin: null, deepMin: null, remMin: null, lightMin: null }, journal: {},
 });
+// activity totals of a day the band did not cover in full (first day worn, today so far) are left out
+const fullDay = (get) => (d) => (d.partialDay ? null : get(d));
 const hasData = (d) => d.recovery != null || d.strain != null || d.sleep.asleepMin != null || d.hrv != null || d.steps != null;
 
 /**
@@ -200,15 +202,28 @@ export class HealthView {
     // deltaFmt formats the absolute change; higherIsGood null = neutral (no good/bad color);
     // n = days with a value (null: not a daily average), shown when the average rests on few days
     const tile = (label, value, prevValue, n, fmt, deltaFmt, higherIsGood) => ({ label, value, prevValue, n, fmt, deltaFmt, higherIsGood });
-    const avg = (get) => [mean(cur.map(get)), mean(prev.map(get)), cur.filter((d) => get(d) != null).length];
+    // the device most of a period's values come from; WHOOP and Polar measure HRV, RHR and sleep
+    // differently, so a change between periods measured on different devices is not shown
+    const deviceOf = (ds, get) => {
+      const v = ds.filter((d) => get(d) != null);
+      return v.filter((d) => d.source === "polar").length * 2 > v.length ? "polar" : "whoop";
+    };
+    const avg = (get) => {
+      const sameDevice = deviceOf(cur, get) === deviceOf(prev, get);
+      return [mean(cur.map(get)), sameDevice ? mean(prev.map(get)) : null, cur.filter((d) => get(d) != null).length];
+    };
+    const has = (get) => cur.some((d) => get(d) != null);
+    const perf = (d) => d.sleep.performance;
+    const score = (d) => d.sleep.score;
     const tiles = [
-      tile("Avg recovery", ...avg((d) => d.recovery), (v) => `${Math.round(v)}%`, (d) => `${Math.round(d)} pts`, true),
+      has((d) => d.recovery) && tile("Avg recovery", ...avg((d) => d.recovery), (v) => `${Math.round(v)}%`, (d) => `${Math.round(d)} pts`, true),
       tile("Avg HRV", ...avg((d) => d.hrv), (v) => `${Math.round(v)} ms`, (d) => `${Math.round(d)} ms`, true),
       tile("Avg resting heart rate", ...avg((d) => d.rhr), (v) => `${Math.round(v)} bpm`, (d) => `${Math.round(d)} bpm`, false),
       tile("Avg sleep per night", ...avg((d) => d.sleep.asleepMin), (v) => `${hm(v)} h`, (d) => `${Math.round(d)} min`, true),
-      tile("Avg sleep score", ...avg((d) => d.sleep.performance), (v) => `${Math.round(v)}%`, (d) => `${Math.round(d)} pts`, true),
+      has(perf) && tile("Avg sleep performance", ...avg(perf), (v) => `${Math.round(v)}%`, (d) => `${Math.round(d)} pts`, true),
+      (has(score) || !has(perf)) && tile("Avg sleep score", ...avg(score), (v) => `${Math.round(v)}`, (d) => `${Math.round(d)} pts`, true),
       tile("Workouts", workouts.length, prevWorkouts?.length ?? null, null, (v) => `${v}`, (d) => `${Math.round(d)}`, null),
-    ];
+    ].filter(Boolean);
     const el = this.root.querySelector("#health-tiles");
     el.replaceChildren(
       ...tiles.map((t) => {
@@ -264,7 +279,8 @@ export class HealthView {
 
   /**
    * Straight-line trends of bucketed points [{ t, v, day | days }] for long ranges. When the range mixes
-   * WHOOP and Polar, one trend per device: their scales differ (e.g. Polar RHR is the average sleep HR),
+   * WHOOP and Polar, one trend per device: their methods differ (e.g. RHR from WHOOP's last deep-sleep
+   * phase vs. Polar's average over the first ~4 h of sleep; Polar scores less deep sleep),
    * so a single line across the switch would partly measure the device change.
    */
   trendsFor(points, get, mixed) {
@@ -369,13 +385,17 @@ export class HealthView {
     const oneDecimal = (unit) => (d) => `${d.toFixed(1)}${unit ? ` ${unit}` : ""}`;
     const pct = { ticks: [0, 25, 50, 75, 100], unit: "%", format: (v) => `${Math.round(v)}` };
     if (fromWhoop) lineCard(sleepGroup, "Recovery", "WHOOP morning recovery score, %", (d) => d.recovery, pct, "Recovery %", round("pts"), true);
-    lineCard(sleepGroup, "Heart rate variability", "During sleep, ms", (d) => d.hrv, { unit: "ms", format: (v) => `${Math.round(v)}` }, "HRV (ms)", round("ms"), true);
+    lineCard(sleepGroup, "Heart rate variability",
+      `RMSSD during sleep, ms${fromPolar ? ` · ${both ? "WHOOP weighted to deep sleep, then " : ""}Polar over the first ~4 h of sleep` : ""}`, (d) => d.hrv, { unit: "ms", format: (v) => `${Math.round(v)}` }, "HRV (ms)", round("ms"), true);
     lineCard(sleepGroup, "Resting heart rate",
-      fromPolar ? `bpm${both ? " · WHOOP resting HR, then" : " ·"} Polar average HR during sleep (reads a few bpm higher)` : "bpm",
+      fromPolar ? `bpm${both ? " · WHOOP: HR in the last deep sleep, then" : " ·"} Polar: average HR over the first ~4 h of sleep` : "bpm",
       (d) => d.rhr, { unit: "bpm", format: (v) => `${Math.round(v)}` }, "RHR (bpm)", oneDecimal("bpm"), false);
-    lineCard(sleepGroup, "Sleep score",
-      both ? "WHOOP sleep performance, then Polar sleep score, %" : fromPolar ? "Polar sleep score, 1–100" : "WHOOP sleep performance: sleep you got vs. sleep you needed, %",
-      (d) => d.sleep.performance, pct, "Sleep score %", round("pts"), true);
+    // two different scores, never one line: WHOOP = hours slept vs. hours needed; Polar = composite of
+    // duration, interruptions, continuity, deep and REM sleep (1–100)
+    if (fromWhoop) lineCard(sleepGroup, "Sleep performance", "WHOOP: sleep you got vs. sleep you needed, %",
+      (d) => d.sleep.performance, pct, "Sleep performance %", round("pts"), true);
+    if (fromPolar) lineCard(sleepGroup, "Sleep score", "Polar: duration, interruptions, continuity, deep and REM sleep, 1–100",
+      (d) => d.sleep.score, { ...pct, unit: "" }, "Sleep score", round("pts"), true);
 
     // sleep stages, hours; rolling average and trend of the total
     const stages = [
@@ -391,7 +411,8 @@ export class HealthView {
     });
     const sleepSmooth = this.rolling(days, cur, asleepH, window);
     const sleepTrends = long ? this.trendsFor(sb.points, asleepH, both) : [];
-    const sleepSub = `Hours asleep per night${sb.weekly ? " · weekly average" : ""}`;
+    // the stage split is device-specific (Polar scores about half the deep sleep WHOOP did); totals compare better
+    const sleepSub = `Hours asleep per night${sb.weekly ? " · weekly average" : ""}${both ? " · stage split differs by device, compare totals" : ""}`;
     {
       this.card(sleepGroup, "Sleep stages", sleepSub,
         (el) => stackedColumns(el, sleepRows, stages, { unit: "h", describe: sb.describe, format: (v) => hm(v * 60), trend: sleepTrends, smooth: sleepSmooth, gaps, marks }),
@@ -407,8 +428,8 @@ export class HealthView {
     }
 
     if (fromWhoop) lineCard(activityGroup, "Day strain", "WHOOP strain, 0–21", (d) => d.strain, { ticks: [0, 7, 14, 21], tickFormat: (v) => `${v}`, format: (v) => v.toFixed(1) }, "Strain", oneDecimal(""), null);
-    if (cur.some((d) => d.cardioLoad != null)) lineCard(activityGroup, "Cardio load", "Polar daily cardio load (TRIMP-based)", (d) => d.cardioLoad, { format: (v) => v.toFixed(0) }, "Cardio load", round(""), null);
-    if (cur.some((d) => d.steps != null)) lineCard(activityGroup, "Steps", "Per day, Polar", (d) => d.steps, { unit: "steps", format: (v) => Math.round(v).toLocaleString() }, "Steps", round("steps"), true);
+    if (cur.some((d) => d.cardioLoad != null)) lineCard(activityGroup, "Cardio load", "Polar daily cardio load (TRIMP-based), full days only", fullDay((d) => d.cardioLoad), { format: (v) => v.toFixed(0) }, "Cardio load", round(""), null);
+    if (cur.some((d) => d.steps != null)) lineCard(activityGroup, "Steps", "Per day, Polar, full days only", fullDay((d) => d.steps), { unit: "steps", format: (v) => Math.round(v).toLocaleString() }, "Steps", round("steps"), true);
 
     // workouts by activity (hours), top 6 + Other
     const byActivity = new Map();
@@ -466,7 +487,8 @@ export class HealthView {
       { label: "HRV", get: (g) => fixed(avg(g, (d) => d.hrv), 0), num: true },
       { label: "RHR", get: (g) => fixed(avg(g, (d) => d.rhr), 1), num: true },
       { label: "Sleep", get: (g) => { const v = avg(g, (d) => d.sleep.asleepMin); return v == null ? null : hm(v); }, num: true },
-      { label: "Sleep score", get: (g) => fixed(avg(g, (d) => d.sleep.performance), 0), num: true },
+      { label: "Sleep perf. %", get: (g) => fixed(avg(g, (d) => d.sleep.performance), 0), num: true },
+      { label: "Sleep score", get: (g) => fixed(avg(g, (d) => d.sleep.score), 0), num: true },
       { label: "Strain", get: (g) => fixed(avg(g, (d) => d.strain), 1), num: true },
       { label: "Workouts", get: (g) => g.workouts, num: true },
     ], rows);
@@ -537,9 +559,9 @@ export class HealthView {
       series);
   }
 
-  /** Total minutes in each WHOOP heart-rate zone. */
+  /** Total minutes in each heart-rate zone. */
   zonesCard(cards, workouts) {
-    // WHOOP reports % of the workout in zones 1-5; the rest is below zone 1
+    // WHOOP and Polar both report % of the workout in zones 1-5 (50-60 ... 90-100% of max HR); the rest is below zone 1
     const minutes = [0, 0, 0, 0, 0, 0];
     for (const w of workouts) {
       const d = w.durationMin ?? 0;
@@ -549,7 +571,7 @@ export class HealthView {
     const total = minutes.reduce((a, b) => a + b, 0);
     const rows = minutes.map((m, i) => ({ label: i ? `Zone ${i}` : "Below zone 1", value: m }));
     const pct = (m) => (total ? `${Math.round((m / total) * 100)}%` : "–");
-    this.card(cards, "Heart-rate zones", "Workout time in each heart-rate zone",
+    this.card(cards, "Heart-rate zones", "Workout time in each zone (% of max HR)",
       (el) => (total ? hBars(el, rows, { color: css("--series-1"), format: (v) => `${hm(v)} h · ${pct(v)}` }) : (el.textContent = "No workouts in this period.")),
       [{ label: "Zone", get: (r) => r.label }, { label: "Time (h)", get: (r) => hm(r.value), num: true }, { label: "Share", get: (r) => pct(r.value), num: true }],
       rows);
@@ -572,6 +594,7 @@ export class HealthView {
       { label: "Category", get: (w) => WORKOUT_CATEGORIES[categoryIndex(w.activity)].label },
       { label: "Duration", get: (w) => `${w.durationMin} min`, num: true },
       { label: "Strain", get: (w) => w.strain?.toFixed(1), num: true },
+      { label: "Cardio load", get: (w) => w.cardioLoad?.toFixed(0), num: true },
       { label: "Avg / max HR", get: (w) => (w.avgHr ? `${w.avgHr} / ${w.maxHr}` : null), num: true },
       { label: "kcal", get: (w) => (w.kcal == null ? null : Math.round(w.kcal)), num: true },
       { label: "Zones 1–5 (%)", get: (w) => w.zones.map((z) => Math.round(z)).join(" / "), num: true },
