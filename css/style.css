@@ -233,7 +233,8 @@ body { display: flex; flex-direction: column; height: 100dvh; }
   cursor: pointer;
   user-select: none;
 }
-.list li:hover { background: var(--chip); }
+/* touch screens keep :hover on the last tapped row: hover fills only where there is a real pointer */
+@media (hover: hover) { .list li:hover { background: var(--chip); } }
 .list li small { color: var(--muted); font-size: 12px; }
 .list li.active { background: color-mix(in srgb, var(--primary) 14%, transparent); }
 .list li.active span { font-weight: 600; }
@@ -555,7 +556,7 @@ body:not([data-view="exercise"]) .layout { display: none; }
 /* ---------- phone layout: model on top, panel as bottom sheet */
 
 @media (max-width: 760px) {
-  .layout { grid-template-columns: 1fr; grid-template-rows: 40fr 60fr; }
+  .layout { grid-template-columns: 1fr; grid-template-rows: 58fr 42fr; } /* the model gets most of the height */
   /* expanded: the panel takes the whole screen, the model is hidden */
   body.panel-expanded .layout { grid-template-rows: 0 1fr; }
   body.panel-expanded .stage { visibility: hidden; }

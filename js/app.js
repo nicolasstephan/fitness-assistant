@@ -63,7 +63,8 @@ function refresh() {
 
   document.querySelectorAll("#exercise-list li").forEach((li) => li.classList.toggle("active", state.exercises.has(li.dataset.id)));
   document.querySelectorAll("#group-list li").forEach((li) => li.classList.toggle("active", li.dataset.id === state.group));
-  $("#legend-highlight").hidden = state.tab === "volume" || !!plan; // the plan's info box has its own green key
+  // only when red / orange muscles are on the model; the plan's info box has its own green key
+  $("#legend-highlight").hidden = state.tab === "volume" || !!plan || !(primary.size || secondary.size);
   $("#legend-volume").hidden = state.tab !== "volume";
   if (state.tab === "volume") showVolume();
   else if (plan) {

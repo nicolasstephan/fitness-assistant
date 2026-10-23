@@ -38,6 +38,8 @@ export class MuscleViewer {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.12;
     this.controls.enablePan = false; // always orbit around the body's center
+    // turntable: spin around the vertical axis only, no tilting
+    this.controls.minPolarAngle = this.controls.maxPolarAngle = Math.PI / 2 - 0.05;
     this.controls.addEventListener("change", () => this.requestRender());
     this.controls.addEventListener("start", () => (this.anim = null)); // user takes over
 

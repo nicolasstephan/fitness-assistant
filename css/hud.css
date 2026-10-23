@@ -45,7 +45,8 @@
 [data-style="hud"] .data-table { font-family: var(--mono); font-size: 12px; }
 
 /* lists: hairline marker instead of a hover fill */
-[data-style="hud"] .list li:hover { background: none; box-shadow: inset 2px 0 0 var(--text); }
+/* selected rows keep their data tint (exercise red, plan green), also under the sticky :hover of a tap */
+[data-style="hud"] .list li:not(.active):not(.plan-active):hover { background: none; box-shadow: inset 2px 0 0 var(--text); }
 [data-style="hud"] .list li.active:hover, [data-style="hud"] .list li.plan-active:hover { box-shadow: inset 2px 0 0 var(--text); }
 
 /* 3D stage: info box framed like the cards; display toggles as outlined squares */
