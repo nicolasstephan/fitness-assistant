@@ -610,6 +610,7 @@ $("#style-mode").value = getStyle();
 $("#style-mode").addEventListener("change", (e) => setStyle(e.target.value));
 addEventListener("themechange", () => {
   if (state.tab === "volume" || state.planFocus) refresh(); // heatmap / plan greens come from CSS tokens
+  if (state.planFocus) workoutView.renderProgress(trainingLog.doc); // progress chart colors too
   if (document.body.dataset.view === "health") health.render();
   if (document.body.dataset.view === "today") checkin.render();
 });

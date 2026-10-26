@@ -422,6 +422,12 @@ dialog select { padding: 8px 6px; border: 1px solid var(--border); border-radius
 .workout-plans .list li span > small.suggested { display: inline; margin-left: 4px; color: var(--plan-1); font-weight: 600; font-size: 12px; }
 /* tapped plan: its muscles are green on the model (data color), the row tinted to match */
 .workout-plans .list li.plan-active { background: color-mix(in srgb, var(--plan-1) 14%, transparent); }
+/* tapped plan: progress per exercise (total reps, heaviest weight) */
+.plan-progress { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.plan-progress h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.progress-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; }
+.progress-card > small { color: var(--muted); font-size: 12px; }
+.progress-label { margin-top: 8px; color: var(--muted); font-size: 12px; }
 .plan-checklist { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
 .plan-exercise { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
 .plan-exercise-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }

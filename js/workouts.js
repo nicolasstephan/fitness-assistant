@@ -1,7 +1,8 @@
 // Workouts: plans (templates of exercises with sets), timed workouts started from a plan or free,
 // a set checklist while running, and the muscles a workout trained.
 // Finished workouts are matched with tracker workouts (WHOOP now, Polar later) by overlapping time.
-import { activeWorkout, describeSets, localNow, newId, normalizeLog } from "./training-log.js";
+import { activeWorkout, dailyProgress, describeSets, localNow, newId, normalizeLog } from "./training-log.js";
+import { lineChart } from "./charts.js";
 import { suggestNextPlan, VOLUME_TARGET } from "./volume.js";
 import { groupById } from "./data/muscle-groups.js";
 
@@ -79,6 +80,7 @@ export class WorkoutView {
   selectPlan(id) {
     this.selectedPlan = id;
     this.root.querySelectorAll("[data-select-plan]").forEach((li) => li.classList.toggle("plan-active", li.dataset.selectPlan === id));
+    this.renderProgress(this.getLog());
     this.onSelectPlan?.(id);
   }
 
@@ -346,6 +348,58 @@ export class WorkoutView {
         el("button", { type: "button", className: "primary-btn small", dataset: { startPlan: p.id }, textContent: "▶ Start" }))),
     );
     box.querySelector("#plans-hint").hidden = log.plans.length > 0;
+    this.renderProgress(log);
+  }
+
+  /**
+   * Progress of the selected plan's exercises: one card per exercise with total reps per day,
+   * plus the heaviest weight per day below it when the exercise was ever done with weight
+   * (two single-axis charts on the same dates rather than one chart with two scales).
+   */
+  renderProgress(log) {
+    const box = this.root.querySelector("#plan-progress");
+    const plan = !activeWorkout(log) && this.selectedPlan && log.plans.find((p) => p.id === this.selectedPlan);
+    box.hidden = !plan;
+    box.replaceChildren();
+    if (!plan) return;
+    const css = getComputedStyle(document.documentElement);
+    const colors = { reps: css.getPropertyValue("--series-1").trim(), kg: css.getPropertyValue("--series-2").trim() };
+    const fmtKg = (v) => (Number.isInteger(v) ? `${v}` : v.toFixed(1));
+    box.appendChild(el("h4", { textContent: `Progress · ${plan.name}` }));
+
+    for (const exercise of new Set(plan.items.map((it) => it.exercise))) {
+      const days = dailyProgress(log.sessions.filter((s) => s.exercise === exercise));
+      const card = el("div", { className: "progress-card" },
+        el("strong", { textContent: this.exerciseById.get(exercise)?.name ?? exercise }));
+      box.appendChild(card);
+      if (!days.length) {
+        card.appendChild(el("small", { textContent: "Not done yet" }));
+        continue;
+      }
+      const first = days[0], last = days.at(-1);
+      const weighted = days.some((d) => d.kg > 0);
+      const change = (a, b, unit) => (b === a ? `${b} ${unit}` : `${a} → ${b} ${unit}`);
+      card.appendChild(el("small", {
+        textContent: [
+          `${days.length} day${days.length === 1 ? "" : "s"} since ${fmtDay(`${first.date}T00:00`)}`,
+          change(first.reps, last.reps, "reps"),
+          weighted && change(fmtKg(first.kg), fmtKg(last.kg), "kg"),
+        ].filter(Boolean).join(" · "),
+      }));
+      // one day alone: open the time axis a day earlier so the dot sits at the right edge
+      const series = (key) => [...(days.length === 1 ? [{ t: first.t - 86400000, v: null }] : []), ...days.map((d) => ({ t: d.t, v: d[key] }))];
+      const describe = (t) => {
+        const d = days.find((x) => x.t === t);
+        return d ? `${fmtDay(`${d.date}T00:00`)} · ${describeSets(d.sets)}` : "";
+      };
+      const chart = (key, label, unit, format) => {
+        const c = el("div", { className: "progress-chart" });
+        card.append(el("span", { className: "progress-label", textContent: label }), c);
+        lineChart(c, series(key), { color: colors[key], height: 110, unit, format, describe });
+      };
+      chart("reps", "Total reps", "reps");
+      if (weighted) chart("kg", "Heaviest weight", "kg", fmtKg);
+    }
   }
 
   /**

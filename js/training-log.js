@@ -99,6 +99,25 @@ export function progressMetric(sessions) {
     : { label: "Best set", unit: "reps", value: (s) => Math.max(...s.sets.map((x) => x.reps)), format: (v) => `${Math.round(v)}` };
 }
 
+/**
+ * Per-day progress of one exercise's sessions (sorted by date): total reps over all sets,
+ * heaviest weight (0 for bodyweight), and the day's sets for the tooltip.
+ * [{ t (UTC ms of the day), date, reps, kg, sets }]
+ */
+export function dailyProgress(sessions) {
+  const byDay = new Map();
+  for (const s of sessions) {
+    const day = byDay.get(s.date) ?? { t: Date.parse(`${s.date}T00:00:00Z`), date: s.date, reps: 0, kg: 0, sets: [] };
+    for (const x of s.sets) {
+      day.reps += x.reps;
+      day.kg = Math.max(day.kg, x.kg);
+      day.sets.push(x);
+    }
+    byDay.set(s.date, day);
+  }
+  return [...byDay.values()].sort((a, b) => a.t - b.t);
+}
+
 export function describeSets(sets) {
   const allSame = sets.every((x) => x.reps === sets[0].reps && x.kg === sets[0].kg);
   const one = (x) => `${x.reps}${x.kg ? ` × ${x.kg} kg` : ""}`;
