@@ -8,6 +8,7 @@ import { LogDialog, normalizeLog, mergeLogs, lastSessionText } from "./training-
 import { CheckinView, normalizeJournal, mergeJournals, localToday } from "./checkin.js";
 import { weeklySets, volumeColors, workoutMuscles, VOLUME_BINS, VOLUME_TARGET } from "./volume.js";
 import { WorkoutView } from "./workouts.js";
+import { ActivityView } from "./activities.js";
 import { SupplementDialog } from "./supplements.js";
 import { checkForUpdate } from "./update-check.js";
 import { runPolarSync } from "./polar-sync.js";
@@ -26,6 +27,7 @@ const state = {
   group: null, // selected muscle group id (muscles tab)
   tab: "exercises", // panel tab, sets the model's display: "volume" | "exercises" (Training) | "muscles"
   workoutFocus: null, // workout id whose trained muscles are shown on the model
+  sportFocus: null, // { id, sport, title }: an activity whose sport's muscles are shown (Other activities)
   planFocus: null, // workout plan id whose muscles are shown in green
 };
 
@@ -38,7 +40,9 @@ const state = {
 function refresh() {
   const primary = new Set();
   const secondary = new Set();
-  const focus = state.tab === "exercises" && state.workoutFocus && workoutMuscles(trainingLog.doc, state.workoutFocus, exerciseById);
+  const sport = state.tab === "exercises" && !state.workoutFocus && state.sportFocus;
+  const focus = sport ? { primary: sport.sport.primary, secondary: sport.sport.secondary }
+    : state.tab === "exercises" && state.workoutFocus && workoutMuscles(trainingLog.doc, state.workoutFocus, exerciseById);
   // a tapped workout plan: the muscles it will train, in green (its own data color)
   const plan = state.tab === "exercises" && !focus && state.planFocus ? trainingLog.doc.plans.find((p) => p.id === state.planFocus) : null;
   if (focus) {
@@ -76,7 +80,8 @@ function refresh() {
     showPlanSummary(plan, primary, secondary);
   } else {
     viewer.setGroupColors(null);
-    if (focus) showWorkoutSummary(focus);
+    if (sport) showSportSummary(sport, primary, secondary);
+    else if (focus) showWorkoutSummary(focus);
     else showSummary(primary, secondary);
   }
 }
@@ -116,12 +121,39 @@ function selectTab(name) {
   refresh();
 }
 
+/** Any other selection on the Training tab ends the activity highlight. */
+function clearSportFocus() {
+  if (!state.sportFocus) return;
+  state.sportFocus = null;
+  activityView.select(null);
+}
+
 /** Show which muscles a workout trained: highlight on the model + sets per muscle group. */
 function showWorkoutMuscles(workoutId) {
   clearPlanFocus();
+  clearSportFocus();
   state.exercises.clear();
   state.workoutFocus = workoutId;
   selectTab("exercises");
+}
+
+/** Info box for a tapped activity: its sport's main and assisting muscles. */
+function showSportSummary(focus, primary, secondary) {
+  const info = $("#info");
+  const names = (set) => [...set].map((g) => groupById.get(g)?.label ?? g).join(", ");
+  const head = document.createElement("strong");
+  head.textContent = focus.title;
+  const line = (cls, text) => {
+    const div = document.createElement("div");
+    if (cls === "secondary") div.className = "muted";
+    const dot = document.createElement("span");
+    dot.className = `dot ${cls}`;
+    div.append(dot, text);
+    return div;
+  };
+  info.replaceChildren(head, line("primary", names(primary)));
+  if (secondary.size) info.appendChild(line("secondary", names(secondary)));
+  info.hidden = false;
 }
 
 function showWorkoutSummary(focus) {
@@ -237,6 +269,7 @@ profile.onChange = (doc) => {
 trainingLog.onChange = () => {
   renderMyExercises();
   workoutView.render(); // renderMyExercises -> refresh() already redraws the volume heatmap
+  activityView.render();
 };
 journal.onChange = (doc) => {
   checkin.render();
@@ -278,6 +311,7 @@ async function loadHealth(cfg) {
     health.setMessage("");
     health.setData(doc);
     workoutView.render(); // tracker matches
+    activityView.render();
     writeLocal(HEALTH_CACHE_KEY, doc);
   } catch (err) {
     health.setMessage(`Could not load health data: ${err.message}`);
@@ -418,6 +452,7 @@ $("#exercise-list").addEventListener("click", (e) => {
   const id = li.dataset.id;
   clearPlanFocus();
   state.workoutFocus = null;
+  clearSportFocus();
   state.exercises.has(id) ? state.exercises.delete(id) : state.exercises.add(id);
   viewer.setSelected(null);
   refresh();
@@ -432,6 +467,7 @@ $("#exercise-search").addEventListener("keydown", (e) => {
 $("#clear-selection").addEventListener("click", () => {
   clearPlanFocus();
   state.workoutFocus = null;
+  clearSportFocus();
   state.exercises.clear(); // Training's selection only; the Muscles tab keeps its own
   viewer.setSelected(null);
   refresh();
@@ -591,18 +627,26 @@ const logDialog = new LogDialog($("#log-dialog"), {
 
 // ---------- timed workouts
 
+// tracker workouts with display names for their source (merged docs tag each workout with "whoop" / "polar")
+const TRACKER_NAMES = { whoop: "WHOOP", polar: "Polar" };
+const getTracker = () => health.doc ? {
+  source: TRACKER_NAMES[health.doc.source] ?? "Tracker",
+  workouts: health.doc.workouts.map((w) => ({ ...w, source: TRACKER_NAMES[w.source ?? health.doc.source] ?? w.source })),
+} : null;
+
 const workoutView = new WorkoutView($("#exercises-tab"), $("#plan-dialog"), {
   getLog: () => trainingLog.doc,
   saveLog: (doc) => trainingLog.update(doc),
   exerciseById,
   getMine: () => state.mine,
-  getTracker: () => (health.doc ? { source: "WHOOP", workouts: health.doc.workouts } : null),
+  getTracker,
   onShowMuscles: showWorkoutMuscles,
   onSelectPlan: (id) => {
     state.planFocus = id;
     if (id) {
       state.exercises.clear();
       state.workoutFocus = null;
+      clearSportFocus();
       viewer.setSelected(null);
     }
     refresh();
@@ -621,6 +665,24 @@ const checkin = new CheckinView($("#checkin"), {
   getJournal: () => journal.doc,
   saveJournal: (doc) => journal.update(doc),
   editProtocol: () => supplementDialog.open(),
+});
+
+// ---------- other activities (sports), under Training
+
+const activityView = new ActivityView($("#activities"), $("#activity-dialog"), {
+  getLog: () => trainingLog.doc,
+  saveLog: (doc) => trainingLog.update(doc),
+  getTracker,
+  onShowSport: (focus) => {
+    state.sportFocus = focus;
+    if (focus) {
+      clearPlanFocus();
+      state.exercises.clear();
+      state.workoutFocus = null;
+      viewer.setSelected(null);
+    }
+    refresh();
+  },
 });
 
 // ---------- sync settings dialog
@@ -701,6 +763,7 @@ health.setJournal(journal.doc);
 const cachedHealth = readLocal(HEALTH_CACHE_KEY, null);
 if (cachedHealth) health.setData(cachedHealth);
 workoutView.render(); // after the health cache, so tracker matches show right away
+activityView.render();
 const syncCfg = readLocal(SYNC_KEY, null);
 if (syncCfg) {
   connectGitHub(syncCfg).catch((err) => {

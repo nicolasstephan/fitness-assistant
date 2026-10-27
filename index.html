@@ -100,6 +100,16 @@
           <ul class="list"></ul>
           <div id="plan-progress" class="plan-progress" hidden></div>
         </section>
+        <section id="activities" class="workout-plans activities">
+          <div class="workout-plans-head">
+            <h3>Other activities</h3>
+            <button type="button" class="ghost small" data-log-activity>+ Log activity</button>
+          </div>
+          <p id="activity-summary" class="hint"></p>
+          <h4 id="activity-ask-head" hidden>Detected by your tracker</h4>
+          <ul id="activity-ask" class="list"></ul>
+          <ul id="activity-list" class="list"></ul>
+        </section>
         <!-- collapsible sections, closed by default -->
         <details id="my-exercises-section" class="fold">
           <summary><h3>My exercises</h3></summary>
@@ -252,6 +262,23 @@
         <span class="spacer"></span>
         <button type="button" id="plan-cancel" class="ghost">Cancel</button>
         <button type="submit" class="primary-btn">Save plan</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="activity-dialog">
+    <form>
+      <h2>Log activity</h2>
+      <label>Sport<select name="sport"></select></label>
+      <label>Date<input name="date" type="date" required></label>
+      <label>Start<input name="time" type="time" required></label>
+      <label>Duration (min)<input name="minutes" type="number" min="1" step="1" inputmode="numeric" maxlength="4" required></label>
+      <p class="hint">If your tracker recorded it, its heart rate and calories are added by the time.</p>
+      <p id="activity-error" class="sync-error" role="status"></p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" id="activity-cancel" class="ghost">Cancel</button>
+        <button type="submit" class="primary-btn">Save</button>
       </div>
     </form>
   </dialog>

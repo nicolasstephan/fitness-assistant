@@ -422,6 +422,15 @@ dialog select { padding: 8px 6px; border: 1px solid var(--border); border-radius
 .workout-plans .list li span > small.suggested { display: inline; margin-left: 4px; color: var(--plan-1); font-weight: 600; font-size: 12px; }
 /* tapped plan: its muscles are green on the model (data color), the row tinted to match */
 .workout-plans .list li.plan-active { background: color-mix(in srgb, var(--plan-1) 14%, transparent); }
+/* other activities: tracker detections to label (sport buttons), then the combined list; a tapped row shows
+   its sport's muscles in red / orange like a workout */
+.activities { border-top: 1px solid var(--border); padding-top: 12px; }
+.activities h4 { margin: 8px 0 2px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.activities small.tracker-match, .activities small.when { color: var(--text); opacity: 0.75; }
+.activities .list li.activity-ask { cursor: default; }
+.activities .list li.activity-ask:hover { background: none; }
+.activities .chips { margin-top: 6px; }
+.activities .chips .guess { border-color: var(--text); color: var(--text); font-weight: 600; } /* best guess, not yet chosen */
 /* tapped plan: progress per exercise (total reps, heaviest weight) */
 .plan-progress { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
 .plan-progress h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }

@@ -3,6 +3,9 @@
 //   workouts: [{ id, start, end, planId?, name? }]   timed workouts ("YYYY-MM-DDTHH:MM" local time; end null while running)
 //   sessions: [{ id, date, exercise, sets: [{ reps, kg, i? }], workoutId?, time? }]   one per exercise
 //             (i = index of the planned set it ticks off)
+//   activities: [{ id, sport, start, end, tracker? }]   other sports (data/sports.js); tracker = key of the tracker
+//             workout it was labeled from ("polar:YYYY-MM-DDTHH:MM", see trackerKey)
+//   ignored:  [trackerKey]   tracker workouts marked "none of these" in the activity list
 import { lineChart } from "./charts.js";
 
 const DAY = 86400000;
@@ -33,6 +36,14 @@ function normalizeWorkout(w) {
   return out;
 }
 
+function normalizeActivity(a) {
+  if (!a || typeof a.id !== "string" || typeof a.sport !== "string" || !LOCAL_TIME_RE.test(a.start ?? "")) return null;
+  if (!LOCAL_TIME_RE.test(a.end ?? "") || a.end <= a.start) return null;
+  const out = { id: a.id, sport: a.sport, start: a.start, end: a.end };
+  if (typeof a.tracker === "string") out.tracker = a.tracker;
+  return out;
+}
+
 function normalizePlan(p) {
   if (!p || typeof p.id !== "string") return null;
   const set = (x) => ({ reps: Math.max(1, Math.round(num(x?.reps)) || 1), kg: num(x?.kg) });
@@ -56,10 +67,13 @@ export function normalizeLog(raw) {
   const workouts = (Array.isArray(raw?.workouts) ? raw.workouts : []).map(normalizeWorkout).filter(Boolean);
   workouts.sort((a, b) => a.start.localeCompare(b.start));
   const plans = (Array.isArray(raw?.plans) ? raw.plans : []).map(normalizePlan).filter(Boolean);
-  return { version: 2, plans, workouts, sessions };
+  const activities = (Array.isArray(raw?.activities) ? raw.activities : []).map(normalizeActivity).filter(Boolean);
+  activities.sort((a, b) => a.start.localeCompare(b.start));
+  const ignored = [...new Set((Array.isArray(raw?.ignored) ? raw.ignored : []).filter((k) => typeof k === "string"))].sort();
+  return { version: 2, plans, workouts, sessions, activities, ignored };
 }
 
-/** Union by id (plans, workouts, sessions); the local copy wins for the same id. */
+/** Union by id (plans, workouts, sessions, activities); the local copy wins for the same id. */
 export function mergeLogs(remote, local) {
   const union = (a, b) => {
     const byId = new Map(a.map((x) => [x.id, x]));
@@ -70,6 +84,8 @@ export function mergeLogs(remote, local) {
     plans: union(remote.plans, local.plans),
     workouts: union(remote.workouts, local.workouts),
     sessions: union(remote.sessions, local.sessions),
+    activities: union(remote.activities, local.activities),
+    ignored: [...remote.ignored, ...local.ignored],
   });
 }
 

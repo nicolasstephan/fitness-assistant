@@ -324,8 +324,10 @@ def build():
                 zones[i] = round(100 * (minutes(z.get("in_zone")) or 0) / dur, 1)
         hr = e.get("heart_rate") or {}
         sport = (e.get("detailed_sport_info") or e.get("sport") or "Other").replace("_", " ").capitalize()
+        start = e.get("start_time", "")[:16]
+        end = (datetime.fromisoformat(start) + timedelta(minutes=dur)).isoformat(timespec="minutes") if start and dur else None
         workouts.append({
-            "start": e.get("start_time", "")[:16], "end": None, "durationMin": round(dur) if dur else dur, "activity": sport, "strain": None,
+            "start": start, "end": end, "durationMin": round(dur) if dur else dur, "activity": sport, "strain": None,
             "kcal": e.get("calories"), "maxHr": hr.get("maximum"), "avgHr": hr.get("average"),
             "zones": zones, "cardioLoad": round((e.get("training_load_pro") or {}).get("cardio-load") or 0, 1) or None,
         })

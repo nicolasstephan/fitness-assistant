@@ -1,6 +1,6 @@
 // Workouts: plans (templates of exercises with sets), timed workouts started from a plan or free,
 // a set checklist while running, and the muscles a workout trained.
-// Finished workouts are matched with tracker workouts (WHOOP now, Polar later) by overlapping time.
+// Finished workouts are matched with tracker workouts (WHOOP, Polar) by overlapping time.
 import { activeWorkout, dailyProgress, describeSets, localNow, newId, normalizeLog } from "./training-log.js";
 import { lineChart } from "./charts.js";
 import { suggestNextPlan, VOLUME_TARGET } from "./volume.js";
@@ -25,6 +25,10 @@ const el = (tag, props = {}, ...children) => {
 };
 const describePlanItem = (it) => describeSets(it.sets);
 
+/** End of a tracker workout; Polar gives only start and duration. */
+export const trackerEnd = (t) =>
+  t.end ?? (t.start && t.durationMin != null ? new Date(toMs(t.start) + t.durationMin * MIN).toISOString().slice(0, 16) : null);
+
 /**
  * Tracker workout with the largest time overlap (15 min tolerance on both ends), or null.
  * trackerWorkouts: [{ start, end, activity, strain, avgHr, maxHr, kcal, durationMin }] in local time.
@@ -34,8 +38,9 @@ export function matchTrackerWorkout(workout, trackerWorkouts) {
   const s = toMs(workout.start) - 15 * MIN, e = toMs(workout.end) + 15 * MIN;
   let best = null, bestOverlap = 0;
   for (const t of trackerWorkouts ?? []) {
-    if (!t.start || !t.end) continue;
-    const overlap = Math.min(e, toMs(t.end)) - Math.max(s, toMs(t.start));
+    const end = trackerEnd(t);
+    if (!t.start || !end) continue;
+    const overlap = Math.min(e, toMs(end)) - Math.max(s, toMs(t.start));
     if (overlap > bestOverlap) [best, bestOverlap] = [t, overlap];
   }
   return best;
@@ -432,7 +437,7 @@ export class WorkoutView {
         if (match) {
           const parts = [match.activity, match.durationMin != null && `${match.durationMin} min`, match.strain != null && `strain ${match.strain.toFixed(1)}`,
             match.avgHr && `HR ${match.avgHr} / ${match.maxHr}`, match.kcal != null && `${Math.round(match.kcal)} kcal`].filter(Boolean);
-          text.appendChild(el("small", { className: "tracker-match", textContent: `${tracker.source}: ${parts.join(" · ")}` }));
+          text.appendChild(el("small", { className: "tracker-match", textContent: `${match.source ?? tracker.source}: ${parts.join(" · ")}` }));
         }
         return el("li", {}, text,
           el("button", { type: "button", className: "ghost small", dataset: { showWorkout: w.id }, textContent: "Muscles" }),
