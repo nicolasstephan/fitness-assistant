@@ -10,6 +10,6 @@ Thumbs.db
 .vscode/
 
 # personal data: lives in the private fitness-data repo, never here
-data/
+/data/
 
 __pycache__/
