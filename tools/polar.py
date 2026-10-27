@@ -1,7 +1,8 @@
 """Polar AccessLink (API v3) client for the Fitness Assistant.
 
     python tools/polar.py setup            # once (any machine): client id/secret, Polar login in the browser, register the user
-    python tools/polar.py sync             # fetch + merge + build + commit/push the data repo (the scheduled task runs this)
+    python tools/polar.py sync             # fetch + merge + build + commit/push the data repo (the scheduled task and the
+                                           # data repo's "Polar sync" GitHub Action run this; the app starts the Action)
     python tools/polar.py fetch            # only download what the API offers into data/polar/raw/ (local cache)
     python tools/polar.py build            # only rebuild health/polar.json from the history
 

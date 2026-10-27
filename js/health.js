@@ -225,7 +225,7 @@ export class HealthView {
     this.root.querySelector("#health-source").textContent =
       sources.map((s) => `${s.name} ${short(s.from)} – ${short(s.to)}`).join(" · ") +
       ` · updated ${new Date(this.doc.importedAt).toLocaleDateString()}` +
-      (to < localToday() ? ` · no data since then, re-import to fill the gap` : "");
+      (to < localToday() ? ` · no data since then, tap ⟳ to fetch` : "");
 
     const s = this.slice();
     this.renderTiles(s);

@@ -10,6 +10,7 @@ import { weeklySets, volumeColors, workoutMuscles, VOLUME_BINS, VOLUME_TARGET } 
 import { WorkoutView } from "./workouts.js";
 import { SupplementDialog } from "./supplements.js";
 import { checkForUpdate } from "./update-check.js";
+import { runPolarSync } from "./polar-sync.js";
 import { getThemeMode, setThemeMode, getStyle, setStyle, STYLES } from "./theme.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -251,6 +252,7 @@ async function connectGitHub(cfg, { merge = false } = {}) {
   $("#sync-status").textContent = "Loading from GitHub…";
   await Promise.all(syncedDocs.map((doc) => doc.connect(cfg, { merge })));
   loadHealth(cfg);
+  syncPolar({ auto: true });
 }
 
 function disconnectGitHub() {
@@ -281,6 +283,41 @@ async function loadHealth(cfg) {
     health.setMessage(`Could not load health data: ${err.message}`);
   }
 }
+
+// ---------- Polar sync: a GitHub Action in the data repo fetches from Polar; started when the app opens or comes
+// back (at most once an hour per device) and from the sync button in the health header
+
+const POLAR_SYNC_KEY = "fa.polarSyncAt";
+const POLAR_AUTO_MS = 60 * 60 * 1000;
+let polarSyncing = false;
+
+function setPolarStatus(text, kind = "") {
+  const el = $("#polar-sync-status");
+  el.textContent = text;
+  el.dataset.kind = kind;
+}
+
+async function syncPolar({ auto = false } = {}) {
+  const cfg = readLocal(SYNC_KEY, null);
+  if (!cfg || polarSyncing) return;
+  if (auto && Date.now() - readLocal(POLAR_SYNC_KEY, 0) < POLAR_AUTO_MS) return;
+  writeLocal(POLAR_SYNC_KEY, Date.now());
+  polarSyncing = true;
+  $("#polar-sync").setAttribute("aria-busy", "true");
+  setPolarStatus("Fetching from Polar…");
+  try {
+    await runPolarSync(cfg);
+    await loadHealth(cfg);
+    setPolarStatus("");
+  } catch (err) {
+    setPolarStatus(err.message, "error");
+  } finally {
+    polarSyncing = false;
+    $("#polar-sync").removeAttribute("aria-busy");
+  }
+}
+
+$("#polar-sync").addEventListener("click", () => syncPolar());
 
 // ---------- three sections, switched in the app bar: health (dashboard, default) / exercise (3D model + panel) /
 // today (daily check-in)
@@ -678,7 +715,9 @@ if (syncCfg) {
 window.addEventListener("load", () => setTimeout(() => checkForUpdate().catch(() => {}), 1500));
 // phones keep the app open in the background for days: check again when it comes back
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") checkForUpdate().catch(() => {});
+  if (document.visibilityState !== "visible") return;
+  checkForUpdate().catch(() => {});
+  if (syncRepo) syncPolar({ auto: true });
 });
 
 viewer

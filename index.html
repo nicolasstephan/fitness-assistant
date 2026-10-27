@@ -130,6 +130,11 @@
   <main id="health-view" class="health">
     <header class="health-head">
       <p id="health-source" class="muted"></p>
+      <span id="polar-sync-status" class="polar-sync-status" role="status"></span>
+      <button id="polar-sync" class="icon-btn" aria-label="Sync Polar now" title="Sync Polar now">
+        <!-- two arrows in a circle -->
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10a6 6 0 0 1-10.4 4.1M4 10a6 6 0 0 1 10.4-4.1"/><path d="M14.6 2.8v3.3h-3.3M5.4 17.2v-3.3h3.3"/></svg>
+      </button>
     </header>
     <div class="filter-row" role="radiogroup" aria-label="Time range">
       <button role="radio" data-range="30">30 days</button>
@@ -259,7 +264,7 @@
       <ol class="hint steps">
         <li>Create a <strong>private</strong> repo, e.g. <code>fitness-data</code>.</li>
         <li>Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>:
-          repository access <em>Only select repositories</em> → that repo, permission <em>Contents: Read and write</em>.</li>
+          repository access <em>Only select repositories</em> → that repo, permissions <em>Contents: Read and write</em> and (for the Polar sync button) <em>Actions: Read and write</em>.</li>
         <li>Enter both below. The token stays in this browser only.</li>
       </ol>
       <label>Repository<input name="repo" placeholder="username/fitness-data" required autocomplete="off"></label>
