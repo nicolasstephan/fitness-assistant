@@ -1,8 +1,8 @@
 // Other activities (sports from data/sports.js) on the Training tab, combined from three places:
 //   - logged by hand (training-log activities), joined with the tracker workout that overlaps them in time;
 //   - tracker workouts that already name the sport (WHOOP "Skateboarding", Polar "Running", ...);
-//   - tracker workouts without a sport (the Loop detects "Other indoor/outdoor"): listed to label with one tap,
-//     with a guess from the most similar labeled sessions (average HR, duration, time of day).
+//   - tracker workouts without a sport (the Loop detects "Other indoor/outdoor"): listed as unknown until
+//     labeled with one tap; the sport is never inferred.
 import { normalizeLog, newId, localNow } from "./training-log.js";
 import { trackerEnd, matchTrackerWorkout } from "./workouts.js";
 import { SPORTS, sportById, sportOfTracker } from "./data/sports.js";
@@ -38,7 +38,7 @@ const overlap = (s1, e1, s2, e2) => Math.min(e1 + TOLERANCE, e2) - Math.max(s1 -
 
 /**
  * All activities, newest first: [{ id?, sport, start, end, tracker?, auto? }] (auto = from a tracker label,
- * not in the log), plus the unlabeled tracker workouts to ask about: [{ t, key, guess }].
+ * not in the log), plus the unlabeled tracker workouts to ask about: [{ t, key }].
  */
 export function combineActivities(log, trackerWorkouts, now = localNow()) {
   const tracker = (trackerWorkouts ?? []).filter((t) => t.start && trackerEnd(t));
@@ -73,30 +73,8 @@ export function combineActivities(log, trackerWorkouts, now = localNow()) {
   }
 
   const activities = [...logged, ...auto].sort((a, b) => b.start.localeCompare(a.start));
-  const examples = activities.filter((a) => a.tracker?.avgHr);
-  const ask = unlabeled.reverse().map((t) => ({ t, key: trackerKey(t), guess: guessSport(t, examples) }));
+  const ask = unlabeled.reverse().map((t) => ({ t, key: trackerKey(t) }));
   return { activities, ask };
-}
-
-/**
- * Sport of the most similar labeled sessions (5 nearest by average HR, duration and time of day), or null
- * when there are too few examples or none is close.
- */
-export function guessSport(t, examples) {
-  if (!t.avgHr || examples.length < 3) return null;
-  const hour = (local) => Number(local.slice(11, 13)) + Number(local.slice(14, 16)) / 60;
-  const minutes = (a) => a.tracker.durationMin ?? (toMs(a.end) - toMs(a.start)) / MIN;
-  const dist = (a) => {
-    const dh = Math.abs(hour(a.start) - hour(t.start));
-    return Math.abs(a.tracker.avgHr - t.avgHr) / 15
-      + Math.abs(Math.log(Math.max(1, minutes(a)) / Math.max(1, t.durationMin ?? 1))) / 0.6
-      + Math.min(dh, 24 - dh) / 4;
-  };
-  const near = examples.map((a) => ({ sport: a.sport, d: dist(a) })).sort((a, b) => a.d - b.d).slice(0, 5);
-  if (near[0].d > 2.5) return null;
-  const votes = new Map();
-  for (const n of near) votes.set(n.sport, (votes.get(n.sport) ?? 0) + 1 / (0.3 + n.d));
-  return [...votes].sort((a, b) => b[1] - a[1])[0][0];
 }
 
 export class ActivityView {
@@ -198,7 +176,7 @@ export class ActivityView {
     }
     this.root.querySelector("#activity-summary").textContent = totals.size
       ? `Last 30 days: ${[...totals].map(([s, t]) => `${sportById.get(s)?.name ?? s} ${t.n}× · ${fmtDuration(t.min)}`).join(" · ")}`
-      : activities.length ? "Nothing in the last 30 days." : "Log boxing, skateboarding, running or surfing, or label what your tracker detected.";
+      : activities.length ? "Nothing in the last 30 days." : "Log boxing, skateboarding, running or indoor surfing, or label what your tracker detected.";
 
     const trackerLine = (t) => {
       const parts = [t.durationMin != null && `${t.durationMin} min`, t.avgHr && `HR ${t.avgHr} / ${t.maxHr}`,
@@ -206,15 +184,14 @@ export class ActivityView {
       return el("small", { className: "tracker-match", textContent: `${t.source ?? tracker?.source ?? "Tracker"}: ${parts.join(" · ")}` });
     };
 
-    this.root.querySelector("#activity-ask").replaceChildren(...ask.map(({ t, key, guess }) =>
+    this.root.querySelector("#activity-ask").replaceChildren(...ask.map(({ t, key }) =>
       el("li", { className: "activity-ask" },
         el("div", { className: "li-text" },
-          el("span", { textContent: `${fmtDay(t.start)} · ${t.start.slice(11)} · what was it?` }),
+          el("span", { textContent: `${fmtDay(t.start)} · ${t.start.slice(11)} · unknown activity` }),
           trackerLine(t),
           el("div", { className: "chips" },
             ...SPORTS.map((s) => el("button", {
-              type: "button", className: `ghost small${s.id === guess ? " guess" : ""}`, dataset: { label: s.id, key },
-              textContent: s.id === guess ? `${s.name}?` : s.name, title: s.id === guess ? "Most like your earlier sessions" : "",
+              type: "button", className: "ghost small", dataset: { label: s.id, key }, textContent: s.name,
             })),
             el("button", { type: "button", className: "ghost small", dataset: { ignore: key }, textContent: "None of these" }))))));
 

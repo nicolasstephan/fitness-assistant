@@ -27,11 +27,11 @@ export const SPORTS = [
   },
   {
     id: "surfing",
-    name: "Surfing",
-    // paddling is most of the session (prone pulling, back extension); pop-up and riding work legs and core
-    primary: ["lats", "delts_rear", "delts_front", "triceps", "traps_middle", "rhomboids", "erectors"],
-    secondary: ["chest", "traps_lower", "rotator_cuff", "quads", "glutes", "abs", "obliques", "calves"],
-    tracker: ["surfing"],
+    name: "Indoor surfing",
+    // standing wave / wave pool: no paddling; riding in a low stance, balance and turns from the legs and trunk
+    primary: ["quads", "glutes", "calves", "abs", "obliques", "transverse_abs"],
+    secondary: ["hamstrings", "adductors", "abductors", "hip_rotators", "shins", "erectors", "delts_side"],
+    tracker: ["surfing", "indoor surfing"],
   },
 ];
 
