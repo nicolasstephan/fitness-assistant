@@ -495,6 +495,9 @@ body:not([data-view="exercise"]) .layout { display: none; }
   padding: 5px 12px;
   font-size: 13px;
 }
+/* five time ranges on one phone row */
+.health .filter-row { gap: 4px; }
+.health .filter-row button { padding: 5px 10px; }
 .filter-row button[aria-checked="true"] { background: var(--text); color: var(--panel); border-color: var(--text); }
 .health-empty { padding: 24px; text-align: center; color: var(--muted); background: var(--panel); border-radius: 12px; }
 

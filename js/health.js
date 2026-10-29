@@ -4,7 +4,7 @@ import { checkinQuestions, supplementQuestions, localToday } from "./checkin.js"
 import { versionOn } from "./supplements.js";
 
 const DAY = 86400000;
-const RANGES = { 30: 30, 90: 90, 365: 365, all: Infinity };
+const RANGES = { 7: 7, 30: 30, 90: 90, 365: 365, all: Infinity };
 const SPARSE = 7; // a tile's average from fewer days than this is shown dimmed
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -356,9 +356,9 @@ export class HealthView {
     const blue = css("--series-1");
     const trendColor = css("--trend");
     const long = this.range === "365" || this.range === "all";
-    const window = this.range === "30" ? 7 : 30;
+    const window = this.range === "7" || this.range === "30" ? 7 : 30;
     const smoothLabel = `${window}-day average`;
-    const period = { 30: "30 days", 90: "90 days", 365: "1 year", all: "the whole period" }[this.range];
+    const period = { 7: "7 days", 30: "30 days", 90: "90 days", 365: "1 year", all: "the whole period" }[this.range];
 
     // Straight-line verdict, only for long ranges. It is fitted on weekly means, which are far less
     // autocorrelated than days, e.g. "▼ 1.8 bpm over 1 year · improved". A slope that does not clear
@@ -531,9 +531,9 @@ export class HealthView {
     this.pendingDraws.forEach((draw) => draw());
   }
 
-  /** Averages per week (30 days), month (90 days) or quarter (longer), oldest first. */
+  /** Averages per week (7 or 30 days), month (90 days) or quarter (longer), oldest first. */
   periodCard(cards, cur, workouts) {
-    const unit = this.range === "30" ? "week" : this.range === "90" ? "month" : "quarter";
+    const unit = this.range === "7" || this.range === "30" ? "week" : this.range === "90" ? "month" : "quarter";
     const keyOf = (t) => {
       const d = new Date(t);
       if (unit === "week") return t - ((d.getUTCDay() + 6) % 7) * DAY;

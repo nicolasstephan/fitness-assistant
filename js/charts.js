@@ -44,6 +44,12 @@ function timeTicks(t0, t1, width) {
     const every = Math.ceil(ticks.length / maxTicks);
     return { ticks: ticks.filter((_, i) => i % every === 0), fmt: (t) => fmtDate(t, { month: "short" }) };
   }
+  // up to two weeks: a label per day, or every other day if they don't fit
+  if (span <= 14) {
+    const step = span + 1 <= maxTicks ? 1 : 2;
+    for (let t = t0; t <= t1; t += step * DAY) ticks.push(t);
+    return { ticks, fmt: (t) => fmtDate(t, { weekday: "short", day: "numeric" }) };
+  }
   // short ranges: labels on Mondays, so they sit on the week lines of dayGrid
   const weeks = [1, 2, 3, 4].find((w) => span / (7 * w) <= maxTicks) ?? 4;
   for (let t = MONDAY(t0); t <= t1; t += weeks * 7 * DAY) ticks.push(t);
