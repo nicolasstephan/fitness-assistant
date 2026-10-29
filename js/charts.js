@@ -26,6 +26,8 @@ function niceTicks(min, max, count = 4) {
 const DAY = 86400000;
 const fmtDate = (t, opts) => new Date(t).toLocaleDateString(undefined, { timeZone: "UTC", ...opts });
 
+const MONDAY = (t) => t + ((8 - new Date(t).getUTCDay()) % 7) * DAY; // first Monday on or after t
+
 function timeTicks(t0, t1, width) {
   const span = (t1 - t0) / DAY;
   const maxTicks = Math.max(2, Math.floor(width / 70));
@@ -42,9 +44,31 @@ function timeTicks(t0, t1, width) {
     const every = Math.ceil(ticks.length / maxTicks);
     return { ticks: ticks.filter((_, i) => i % every === 0), fmt: (t) => fmtDate(t, { month: "short" }) };
   }
-  const stepDays = [1, 2, 7, 14].find((s) => span / s <= maxTicks) ?? 14;
-  for (let t = t0; t <= t1; t += stepDays * DAY) ticks.push(t);
+  // short ranges: labels on Mondays, so they sit on the week lines of dayGrid
+  const weeks = [1, 2, 3, 4].find((w) => span / (7 * w) <= maxTicks) ?? 4;
+  for (let t = MONDAY(t0); t <= t1; t += weeks * 7 * DAY) ticks.push(t);
   return { ticks, fmt: (t) => fmtDate(t, { day: "numeric", month: "short" }) };
+}
+
+/**
+ * Vertical lines along the time axis: one per day while days are at least 8 px apart (Mondays a
+ * little stronger), else one per week (Mondays), else one per month start.
+ */
+function dayGrid(svg, t0, t1, x, height) {
+  const perDay = (x(t1) - x(t0)) / ((t1 - t0) / DAY || 1);
+  const line = (t, cls) => svgEl("line", { x1: x(t), x2: x(t), y1: PAD.top, y2: height - PAD.bottom, class: cls }, svg);
+  if (perDay >= 8) {
+    for (let t = t0; t <= t1; t += DAY) line(t, new Date(t).getUTCDay() === 1 ? "grid" : "grid day");
+  } else if (perDay * 7 >= 8) {
+    for (let t = MONDAY(t0); t <= t1; t += 7 * DAY) line(t, "grid");
+  } else {
+    const d = new Date(t0);
+    for (let m = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1); m <= t1; ) {
+      line(m, "grid");
+      const md = new Date(m);
+      m = Date.UTC(md.getUTCFullYear(), md.getUTCMonth() + 1, 1);
+    }
+  }
 }
 
 /**
@@ -194,6 +218,7 @@ export function lineChart(container, points, opts) {
   if (vals.length) yAxis(svg, ticks, y, PAD.left, width - PAD.right, opts.tickFormat ?? fmt);
   else yAxis(svg, opts.ticks ? ticks : [], y, PAD.left, width - PAD.right, opts.tickFormat ?? fmt);
   drawGaps(svg, opts.gaps, x, width, height);
+  dayGrid(svg, t0, t1, x, height);
   drawMarks(svg, opts.marks, x, width, height);
   const tt = timeTicks(t0, t1, width - PAD.left - PAD.right);
   for (const t of tt.ticks) {

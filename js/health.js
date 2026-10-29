@@ -119,7 +119,7 @@ export class HealthView {
   constructor(root) {
     this.root = root;
     this.doc = null;
-    this.range = "90";
+    this.range = "30";
     root.querySelectorAll("[data-range]").forEach((b) =>
       b.addEventListener("click", () => {
         this.range = b.dataset.range;
