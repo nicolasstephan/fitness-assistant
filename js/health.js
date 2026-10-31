@@ -1,7 +1,10 @@
 // Health dashboard: WHOOP history and Polar data (health/whoop.json, health/polar.json in the private data repo).
-import { lineChart, stackedColumns, hBars, dataTable, linearTrend } from "./charts.js";
+import { lineChart, stackedColumns, hBars, dataTable, linearTrend, offsetChart } from "./charts.js";
 import { checkinQuestions, supplementQuestions, localToday } from "./checkin.js";
 import { versionOn } from "./supplements.js";
+import { combinedWorkouts } from "./activities.js";
+import { SPORTS, sportById } from "./data/sports.js";
+import { BEFORE_MIN } from "./hr.js";
 
 const DAY = 86400000;
 const RANGES = { 7: 7, 30: 30, 90: 90, 365: 365, all: Infinity };
@@ -19,7 +22,18 @@ const WORKOUT_CATEGORIES = [
   { label: "Walking", match: /walk/i },
   { label: "Sports & other", match: /./ },
 ];
-const categoryIndex = (activity) => WORKOUT_CATEGORIES.findIndex((c) => c.match.test(activity ?? ""));
+// a workout = { activity, category? }: manual strength workouts carry their category, the rest go by activity name
+const categoryIndex = (w) => {
+  const byLabel = w.category ? WORKOUT_CATEGORIES.findIndex((c) => c.label === w.category) : -1;
+  return byLabel >= 0 ? byLabel : WORKOUT_CATEGORIES.findIndex((c) => c.match.test(w.activity ?? ""));
+};
+// resting sessions (data/sports.js rest: true), compared with heart rate in fixed colors
+const REST_SPORTS = SPORTS.filter((s) => s.rest);
+const SOURCE_LABEL = { whoop: "WHOOP", polar: "Polar" };
+const sourceLabel = (w) => {
+  const tracker = w.source ? SOURCE_LABEL[w.source] ?? w.source : null;
+  return w.manual ? (tracker ? `Logged + ${tracker}` : "Logged") : tracker ?? "Tracker";
+};
 
 const emptyDay = (date) => ({
   date, recovery: null, rhr: null, hrv: null, strain: null,
@@ -145,6 +159,17 @@ export class HealthView {
     this.render();
   }
 
+  /** The training log: manual workouts and activities join the tracker workouts; resting sessions get their card. */
+  setTrainingLog(log) {
+    this.log = log;
+    this.render();
+  }
+
+  /** Minute heart rate (hr.js MinuteHr) for the resting-session card. */
+  setHr(hr) {
+    this.hr = hr;
+  }
+
   setMessage(text) {
     const el = this.root.querySelector("#health-empty");
     el.textContent = text;
@@ -162,8 +187,9 @@ export class HealthView {
           ...supplementQuestions(this.journal.days[d.date], versionOn(this.journal.supplements, d.date)),
           ...d.journal,
           ...checkinQuestions(this.journal.days[d.date]),
+          ...this.sessionQuestions(d.date),
         }
-        : d.journal,
+        : { ...d.journal, ...this.sessionQuestions(d.date) },
     }));
     annotateHrv(days); // on every day, so the first days of the range still get a 60-day baseline
     const end = days.at(-1).t;
@@ -176,14 +202,31 @@ export class HealthView {
     const covered = (ds) => ds.filter(hasData).length;
     // both periods need data on at least half their days, e.g. not right after the import stopped
     const prev = covered(cur) >= cur.length / 2 && covered(prevDays) >= covered(cur) / 2 ? prevDays : [];
-    const workouts = this.doc.workouts
+    const all = this.log ? combinedWorkouts(this.log, this.doc.workouts) : this.doc.workouts;
+    const workouts = all
       .map((w) => ({ ...w, t: tUTC(w.start.slice(0, 10)) }))
       .filter((w) => w.t >= start);
-    const prevWorkouts = !prev.length ? null : this.doc.workouts.filter((w) => {
+    const prevWorkouts = !prev.length ? null : all.filter((w) => {
       const t = tUTC(w.start.slice(0, 10));
       return t >= prevStart && t < start;
     });
     return { days, cur, prev, workouts, prevWorkouts, start, end, gaps: gapsIn(cur) };
+  }
+
+  /**
+   * Resting sessions as yes/no journal questions on the morning after (that night's HRV carries the wake-up date),
+   * from the day after the first session of that kind on, so the "no" nights come from the same period.
+   */
+  sessionQuestions(date) {
+    if (!this.log) return {};
+    const q = {};
+    const yesterday = new Date(tUTC(date) - DAY).toISOString().slice(0, 10);
+    for (const sport of REST_SPORTS) {
+      const days = new Set(this.log.activities.filter((a) => a.sport === sport.id && a.end).map((a) => a.start.slice(0, 10)));
+      if (!days.size || yesterday < [...days].sort()[0]) continue;
+      q[`${sport.name} the day before?`] = days.has(yesterday);
+    }
+    return q;
   }
 
   /**
@@ -350,6 +393,7 @@ export class HealthView {
     const sleepGroup = group("Recovery & sleep");
     const activityGroup = group("Activity");
     const trainingGroup = group("Training");
+    const sessionGroup = group("Resting sessions");
     const summaryGroup = group("Summary");
     // charts are sized from their container, so draw only once every card is in the grid
     this.pendingDraws = [];
@@ -525,6 +569,7 @@ export class HealthView {
     this.trainingTimeCard(trainingGroup, workouts, start, end, gaps);
     this.zonesCard(trainingGroup, workouts);
     this.workoutsCard(trainingGroup, workouts);
+    this.sessionsCard(sessionGroup, start);
     this.periodCard(summaryGroup, cur, workouts);
     this.journalCard(summaryGroup, cur);
     root.querySelectorAll(".card-group").forEach((g) => g.querySelector(".cards").childElementCount || g.remove());
@@ -634,7 +679,7 @@ export class HealthView {
     for (let t = weekOf(start); t <= end; t += 7 * DAY) weeks.set(t, WORKOUT_CATEGORIES.map(() => 0));
     for (const w of workouts) {
       const row = weeks.get(weekOf(w.t));
-      if (row) row[categoryIndex(w.activity)] += (w.durationMin ?? 0) / 60;
+      if (row) row[categoryIndex(w)] += (w.durationMin ?? 0) / 60;
     }
     const rows = [...weeks].map(([t, values]) => ({ t, values }));
     const total = rows.reduce((a, r) => a + r.values.reduce((x, y) => x + y, 0), 0);
@@ -653,7 +698,8 @@ export class HealthView {
     // WHOOP and Polar both report % of the workout in zones 1-5 (50-60 ... 90-100% of max HR); the rest is below zone 1
     const minutes = [0, 0, 0, 0, 0, 0];
     for (const w of workouts) {
-      const d = w.durationMin ?? 0;
+      if (!w.zones?.length) continue; // logged by hand without tracker data
+      const d = w.zoneMin ?? w.durationMin ?? 0;
       w.zones.forEach((pct, i) => (minutes[i + 1] += (d * pct) / 100));
       minutes[0] += (d * Math.max(0, 100 - w.zones.reduce((a, b) => a + b, 0))) / 100;
     }
@@ -680,14 +726,86 @@ export class HealthView {
     dataTable(body, [
       { label: "Date", get: (w) => `${w.start.slice(0, 10)} ${w.start.slice(11, 16)}` },
       { label: "Activity", get: (w) => w.activity },
-      { label: "Category", get: (w) => WORKOUT_CATEGORIES[categoryIndex(w.activity)].label },
+      { label: "Category", get: (w) => WORKOUT_CATEGORIES[categoryIndex(w)].label },
+      { label: "Source", get: sourceLabel },
       { label: "Duration", get: (w) => `${w.durationMin} min`, num: true },
       { label: "Strain", get: (w) => w.strain?.toFixed(1), num: true },
       { label: "Cardio load", get: (w) => w.cardioLoad?.toFixed(0), num: true },
       { label: "Avg / max HR", get: (w) => (w.avgHr ? `${w.avgHr} / ${w.maxHr}` : null), num: true },
       { label: "kcal", get: (w) => (w.kcal == null ? null : Math.round(w.kcal)), num: true },
-      { label: "Zones 1–5 (%)", get: (w) => w.zones.map((z) => Math.round(z)).join(" / "), num: true },
+      { label: "Zones 1–5 (%)", get: (w) => (w.zones?.length ? w.zones.map((z) => Math.round(z)).join(" / ") : null), num: true },
     ], all);
+  }
+
+  /**
+   * Vagus nerve stimulation and meditation against heart rate: each session vs. its own 20 minutes before
+   * (minute HR from the Loop), and the average change curve per kind. Loads the days it needs, then redraws.
+   */
+  sessionsCard(cards, start) {
+    const sessions = (this.log?.activities ?? [])
+      .filter((a) => a.end && sportById.get(a.sport)?.rest && tUTC(a.start.slice(0, 10)) >= start)
+      .sort((a, b) => b.start.localeCompare(a.start));
+    if (!sessions.length) return;
+    this.hr?.load(sessions, localToday()).then((changed) => {
+      if (!changed) return;
+      this.render();
+      this.onHrLoaded?.();
+    });
+    const rows = sessions.map((a) => ({ a, r: this.hr?.session(a) ?? null }));
+    const measured = rows.filter((x) => x.r);
+    const kinds = REST_SPORTS.map((sport, i) => ({ sport, color: css(`--series-${i + 1}`), rows: measured.filter((x) => x.a.sport === sport.id) }))
+      .filter((k) => k.rows.length);
+    const signed = (v) => (v == null ? null : `${v > 0 ? "+" : v < 0 ? "−" : "±"}${Math.abs(v).toFixed(1)}`);
+    const avg = (xs) => mean(xs.filter((v) => v != null));
+    const nameOf = (id) => sportById.get(id).short ?? sportById.get(id).name;
+    const summary = kinds.map((k) => `${k.sport.short ?? k.sport.name} ${signed(avg(k.rows.map((x) => x.r.dDuring)))} during, `
+      + `${signed(avg(k.rows.map((x) => x.r.dAfter))) ?? "–"} after (${k.rows.length}×)`).join(" · ");
+
+    // average change curve per kind: mean of the per-minute deltas in 5-minute bins (the Loop samples every 5 min at rest)
+    const meanMin = Math.round(avg(measured.map((x) => x.r.minutes)) ?? 0);
+    const series = kinds.map((k) => {
+      const bins = new Map();
+      for (const { r } of k.rows) {
+        for (const p of r.curve) {
+          const b = Math.round(p.m / 5) * 5;
+          if (!bins.has(b)) bins.set(b, []);
+          bins.get(b).push(p.v);
+        }
+      }
+      return { name: k.sport.name, color: k.color, points: [...bins].sort((a, b) => a[0] - b[0]).map(([m, vs]) => ({ m, v: mean(vs) })) };
+    });
+    const minutes = (a) => Math.round((Date.parse(`${a.end}:00Z`) - Date.parse(`${a.start}:00Z`)) / 60000);
+
+    const card = this.card(cards, "Sessions vs. heart rate",
+      measured.length ? `Heart rate change from the ${BEFORE_MIN} min before, bpm · ${summary}`
+        : `Minute heart rate from the Loop, compared with the ${BEFORE_MIN} minutes before each session`,
+      measured.length ? (el) => offsetChart(el, series, {
+        band: [0, meanMin], bandLabel: `avg session ${meanMin} min`, unit: "bpm", zero: true,
+        format: (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(Math.abs(v) < 10 ? 1 : 0)}`,
+      }) : null,
+      [
+        { label: "Date", get: (x) => `${x.a.start.slice(0, 10)} ${x.a.start.slice(11)}` },
+        { label: "Activity", get: (x) => nameOf(x.a.sport) },
+        { label: "Min", get: (x) => minutes(x.a), num: true },
+        { label: "Before", get: (x) => (x.r ? Math.round(x.r.before) : null), num: true },
+        { label: "During", get: (x) => (x.r ? `${Math.round(x.r.during)} (${signed(x.r.dDuring)})` : null), num: true },
+        { label: "After", get: (x) => (x.r?.after != null ? `${Math.round(x.r.after)} (${signed(x.r.dAfter)})` : null), num: true },
+        { label: "Lowest", get: (x) => x.r?.min, num: true },
+      ],
+      rows,
+      kinds.map((k) => ({ name: k.sport.name, color: k.color, line: true })));
+    card.classList.add("wide");
+    if (!measured.length) {
+      card.querySelector(".card-body").textContent = this.hr?.fetchDay
+        ? "No heart rate for these sessions yet: the Loop's data arrives with the next Polar sync."
+        : "Connect GitHub sync to load heart rate.";
+    }
+    const note = document.createElement("p");
+    note.className = "card-note";
+    note.textContent = "Sitting still lowers heart rate by itself, so meditation without stimulation is the fair comparison. "
+      + "At rest the Loop measures every 5 minutes; start a workout on the Loop during a session for second-by-second heart rate. "
+      + "The night after is in Journal vs. HRV (\"… the day before?\").";
+    card.appendChild(note);
   }
 
   /** A chart card with a Chart/Table toggle. Returns the card element. */

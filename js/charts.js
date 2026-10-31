@@ -447,3 +447,67 @@ export function dataTable(container, columns, rows) {
   }
   container.appendChild(table);
 }
+
+/**
+ * Lines over minutes relative to an event (e.g. heart rate around a session start), several series.
+ * series: [{ name, color, points: [{ m, v }] }]; opts: { band: [m0, m1] shaded (the session), format, unit, zero }
+ */
+export function offsetChart(container, series, opts = {}) {
+  const { svg, width, height, tip } = frame(container, opts.height ?? 200);
+  const all = series.flatMap((s) => s.points);
+  if (!all.length) return noData(container);
+  const m0 = Math.min(...all.map((p) => p.m)), m1 = Math.max(...all.map((p) => p.m));
+  const vals = all.map((p) => p.v).concat(opts.zero ? [0] : []);
+  const ticks = niceTicks(Math.min(...vals), Math.max(...vals));
+  const [lo, hi] = [ticks[0], ticks.at(-1)];
+  const x = (m) => PAD.left + ((m - m0) / (m1 - m0 || 1)) * (width - PAD.left - PAD.right);
+  const y = (v) => PAD.top + (1 - (v - lo) / (hi - lo || 1)) * (height - PAD.top - PAD.bottom);
+  const fmt = opts.format ?? ((v) => `${Math.round(v)}`);
+  yAxis(svg, ticks, y, PAD.left, width - PAD.right, fmt);
+  if (opts.band) {
+    const [b0, b1] = opts.band.map((m) => Math.min(width - PAD.right, Math.max(PAD.left, x(m))));
+    svgEl("rect", { x: b0, y: PAD.top, width: Math.max(1, b1 - b0), height: height - PAD.top - PAD.bottom, class: "gap" }, svg);
+    svgEl("text", { x: b0 + 4, y: PAD.top + 14, class: "gap-label" }, svg).textContent = opts.bandLabel ?? "";
+  }
+  if (opts.zero && lo < 0 && hi > 0) svgEl("line", { x1: PAD.left, x2: width - PAD.right, y1: y(0), y2: y(0), class: "mark" }, svg);
+  // minute ticks every 10 / 15 / 30 min, always through 0 (the start)
+  const step = [10, 15, 30, 60].find((s) => ((m1 - m0) / s) * 44 <= width - PAD.left - PAD.right) ?? 60;
+  for (let m = Math.ceil(m0 / step) * step; m <= m1; m += step) {
+    svgEl("text", { x: x(m), y: height - 6, class: "tick", "text-anchor": "middle" }, svg).textContent = m === 0 ? "start" : `${m > 0 ? "+" : "−"}${Math.abs(m)}`;
+  }
+  for (const s of series) {
+    let d = "", prev = null;
+    for (const p of s.points) {
+      d += `${prev != null && p.m - prev <= 10 ? "L" : "M"}${x(p.m).toFixed(1)},${y(p.v).toFixed(1)}`; // break across long gaps
+      prev = p.m;
+    }
+    svgEl("path", { d, class: "line", stroke: s.color }, svg);
+    s.points.forEach((p, i) => {
+      if ((s.points[i - 1]?.m ?? -Infinity) < p.m - 10 && (s.points[i + 1]?.m ?? Infinity) > p.m + 10) svgEl("circle", { cx: x(p.m), cy: y(p.v), r: 3, fill: s.color }, svg);
+    });
+  }
+  const unit = opts.unit ? ` ${opts.unit}` : "";
+  const cross = svgEl("line", { y1: PAD.top, y2: height - PAD.bottom, class: "crosshair", visibility: "hidden" }, svg);
+  const hit = svgEl("rect", { x: PAD.left, y: 0, width: width - PAD.left - PAD.right, height, fill: "transparent" }, svg);
+  const move = (e) => {
+    const px = e.clientX - svg.getBoundingClientRect().left;
+    const m = Math.round(m0 + ((px - PAD.left) / (width - PAD.left - PAD.right)) * (m1 - m0));
+    const rows = [];
+    for (const s of series) {
+      let best = null;
+      for (const p of s.points) if (!best || Math.abs(p.m - m) < Math.abs(best.m - m)) best = p;
+      if (best && Math.abs(best.m - m) <= 5) rows.push({ value: `${fmt(best.v)}${unit}`, label: s.name, color: s.color });
+    }
+    cross.setAttribute("x1", x(m));
+    cross.setAttribute("x2", x(m));
+    cross.setAttribute("visibility", "visible");
+    if (rows.length) tip.show(x(m), e.clientY - svg.getBoundingClientRect().top, m === 0 ? "Start" : `${m > 0 ? "+" : "−"}${Math.abs(m)} min`, rows);
+    else tip.hide();
+  };
+  hit.addEventListener("pointermove", move);
+  hit.addEventListener("pointerdown", move);
+  hit.addEventListener("pointerleave", () => {
+    cross.setAttribute("visibility", "hidden");
+    tip.hide();
+  });
+}

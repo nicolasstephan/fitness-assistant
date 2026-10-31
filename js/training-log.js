@@ -3,8 +3,8 @@
 //   workouts: [{ id, start, end, planId?, name? }]   timed workouts ("YYYY-MM-DDTHH:MM" local time; end null while running)
 //   sessions: [{ id, date, exercise, sets: [{ reps, kg, i? }], workoutId?, time? }]   one per exercise
 //             (i = index of the planned set it ticks off)
-//   activities: [{ id, sport, start, end, tracker? }]   other sports (data/sports.js); tracker = key of the tracker
-//             workout it was labeled from ("polar:YYYY-MM-DDTHH:MM", see trackerKey)
+//   activities: [{ id, sport, start, end, tracker? }]   other activities (data/sports.js); tracker = key of the tracker
+//             workout it was labeled from ("polar:YYYY-MM-DDTHH:MM", see trackerKey); end null while recording
 //   ignored:  [trackerKey]   tracker workouts marked "none of these" in the activity list
 import { lineChart } from "./charts.js";
 
@@ -38,8 +38,9 @@ function normalizeWorkout(w) {
 
 function normalizeActivity(a) {
   if (!a || typeof a.id !== "string" || typeof a.sport !== "string" || !LOCAL_TIME_RE.test(a.start ?? "")) return null;
-  if (!LOCAL_TIME_RE.test(a.end ?? "") || a.end <= a.start) return null;
-  const out = { id: a.id, sport: a.sport, start: a.start, end: a.end };
+  const running = a.end == null;
+  if (!running && (!LOCAL_TIME_RE.test(a.end) || a.end <= a.start)) return null;
+  const out = { id: a.id, sport: a.sport, start: a.start, end: running ? null : a.end };
   if (typeof a.tracker === "string") out.tracker = a.tracker;
   return out;
 }
@@ -96,6 +97,7 @@ export function localNow() {
 }
 
 export const activeWorkout = (log) => log.workouts.find((w) => !w.end) ?? null;
+export const activeActivity = (log) => log.activities.find((a) => !a.end) ?? null;
 
 export const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 

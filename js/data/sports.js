@@ -1,5 +1,6 @@
-// Sports (other activities besides strength workouts) -> muscle groups, like exercises.js.
-// tracker: activity names a tracker gives these sports (WHOOP labels, Polar sport names), lowercase.
+// Other activities besides strength workouts -> muscle groups, like exercises.js.
+// tracker: activity names a tracker gives these activities (WHOOP labels, Polar sport names), lowercase.
+// rest: a resting session (no muscles, not a workout in the Health view); compared with heart rate instead.
 
 export const SPORTS = [
   {
@@ -32,6 +33,24 @@ export const SPORTS = [
     primary: ["quads", "glutes", "calves", "abs", "obliques", "transverse_abs"],
     secondary: ["hamstrings", "adductors", "abductors", "hip_rotators", "shins", "erectors", "delts_side"],
     tracker: ["surfing", "indoor surfing"],
+  },
+  {
+    id: "tens",
+    name: "Vagus nerve stimulation",
+    short: "TENS",
+    // transcutaneous (ear / neck) stimulation with a TENS unit; judged by heart rate during and after
+    primary: [],
+    secondary: [],
+    tracker: [],
+    rest: true,
+  },
+  {
+    id: "meditation",
+    name: "Meditation",
+    primary: [],
+    secondary: [],
+    tracker: ["meditation", "mindfulness", "breathing exercise", "breathwork"],
+    rest: true,
   },
 ];
 

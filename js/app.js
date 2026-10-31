@@ -9,6 +9,8 @@ import { CheckinView, normalizeJournal, mergeJournals, localToday } from "./chec
 import { weeklySets, volumeColors, workoutMuscles, VOLUME_BINS, VOLUME_TARGET } from "./volume.js";
 import { WorkoutView } from "./workouts.js";
 import { ActivityView } from "./activities.js";
+import { MinuteHr, describeHr } from "./hr.js";
+import { sportById } from "./data/sports.js";
 import { SupplementDialog } from "./supplements.js";
 import { checkForUpdate } from "./update-check.js";
 import { runPolarSync } from "./polar-sync.js";
@@ -21,6 +23,9 @@ document.addEventListener("gesturestart", (e) => e.preventDefault());
 
 const viewer = new MuscleViewer($("#viewer"));
 const health = new HealthView($("#health-view"));
+const minuteHr = new MinuteHr(); // Loop heart rate around resting sessions (vagus nerve stimulation, meditation)
+health.setHr(minuteHr);
+health.onHrLoaded = () => activityView.render(); // session rows show their heart rate change
 const state = {
   mine: [], // ids of the user's exercises, in the order added
   exercises: new Set(), // selected (highlighted) exercise ids
@@ -270,7 +275,19 @@ trainingLog.onChange = () => {
   renderMyExercises();
   workoutView.render(); // renderMyExercises -> refresh() already redraws the volume heatmap
   activityView.render();
+  health.setTrainingLog(trainingLog.doc); // manual workouts in the health view
+  loadSessionHr();
 };
+
+/** Heart rate of the latest resting sessions, for their rows in Other activities. */
+function loadSessionHr() {
+  const rest = trainingLog.doc.activities.filter((a) => a.end && sportById.get(a.sport)?.rest).slice(-20);
+  minuteHr.load(rest, localToday()).then((changed) => {
+    if (!changed) return;
+    activityView.render();
+    health.render();
+  });
+}
 journal.onChange = (doc) => {
   checkin.render();
   health.setJournal(doc);
@@ -282,14 +299,17 @@ const saveMyExercises = () => profile.update({ version: 1, myExercises: state.mi
 async function connectGitHub(cfg, { merge = false } = {}) {
   syncRepo = cfg.repo;
   syncState.clear();
+  minuteHr.fetchDay = (date) => new GitHubStore({ ...cfg, path: `imports/polar/hr/${date}.json` }).loadRaw();
   $("#sync-status").textContent = "Loading from GitHub…";
   await Promise.all(syncedDocs.map((doc) => doc.connect(cfg, { merge })));
   loadHealth(cfg);
+  loadSessionHr();
   syncPolar({ auto: true });
 }
 
 function disconnectGitHub() {
   syncedDocs.forEach((doc) => doc.disconnect());
+  minuteHr.fetchDay = null;
   syncRepo = null;
   renderSyncStatus();
 }
@@ -342,6 +362,7 @@ async function syncPolar({ auto = false } = {}) {
   try {
     await runPolarSync(cfg);
     await loadHealth(cfg);
+    loadSessionHr();
     setPolarStatus("");
   } catch (err) {
     setPolarStatus(err.message, "error");
@@ -673,6 +694,8 @@ const activityView = new ActivityView($("#activities"), $("#activity-dialog"), {
   getLog: () => trainingLog.doc,
   saveLog: (doc) => trainingLog.update(doc),
   getTracker,
+  // heart rate change of a resting session, once its days are loaded (the health view loads them)
+  describeSession: (a) => describeHr(minuteHr.session(a)),
   onShowSport: (focus) => {
     state.sportFocus = focus;
     if (focus) {
@@ -750,9 +773,11 @@ const startParams = new URLSearchParams(location.hash.slice(1)); // read before 
 // panel tab from the link (older links: #volume=1 meant the heatmap, #group= the muscles list)
 const startTab = ["volume", "exercises", "muscles"].includes(startParams.get("tab")) ? startParams.get("tab")
   : startParams.get("volume") === "1" ? "volume" : startParams.has("group") ? "muscles" : "exercises";
-// health unless the link asks for another section (the old "body" view and a selection on the model mean exercise)
-const startView = startParams.get("view") === "body" || ["ex", "group", "volume", "tab"].some((k) => startParams.has(k))
-  ? "exercise"
+// the app always opens on Health (Nicolas, 2026-10-31); only a reload (the update check after a deploy, pull to
+// refresh) stays in the section the URL names (the old "body" view and a selection on the model mean exercise)
+const reloaded = performance.getEntriesByType("navigation")[0]?.type === "reload";
+const startView = !reloaded ? "health"
+  : startParams.get("view") === "body" || ["ex", "group", "volume", "tab"].some((k) => startParams.has(k)) ? "exercise"
   : VIEWS.includes(startParams.get("view")) ? startParams.get("view") : "health";
 state.mine = profile.doc.myExercises;
 readHash();
@@ -760,6 +785,7 @@ selectTab(startTab);
 showView(startView);
 renderMyExercises();
 health.setJournal(journal.doc);
+health.setTrainingLog(trainingLog.doc);
 const cachedHealth = readLocal(HEALTH_CACHE_KEY, null);
 if (cachedHealth) health.setData(cachedHealth);
 workoutView.render(); // after the health cache, so tracker matches show right away
@@ -777,8 +803,17 @@ if (syncCfg) {
 // after everything has loaded, make sure no file is a stale cached copy from before a deploy
 window.addEventListener("load", () => setTimeout(() => checkForUpdate().catch(() => {}), 1500));
 // phones keep the app open in the background for days: check again when it comes back
+const BACK_TO_HEALTH_MS = 30 * 60 * 1000;
+let hiddenAt = null;
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState !== "visible") return;
+  if (document.visibilityState !== "visible") {
+    hiddenAt = Date.now();
+    return;
+  }
+  // gone for a while: open on Health like a fresh start (unless a workout or recording is running)
+  const busy = trainingLog.doc.workouts.some((w) => !w.end) || trainingLog.doc.activities.some((a) => !a.end);
+  if (hiddenAt && Date.now() - hiddenAt > BACK_TO_HEALTH_MS && !busy && document.body.dataset.view !== "health") showView("health");
+  hiddenAt = null;
   checkForUpdate().catch(() => {});
   if (syncRepo) syncPolar({ auto: true });
 });

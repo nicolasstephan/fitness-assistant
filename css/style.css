@@ -430,6 +430,13 @@ dialog select { padding: 8px 6px; border: 1px solid var(--border); border-radius
 .activities .list li.activity-ask { cursor: default; }
 .activities .list li.activity-ask:hover { background: none; }
 .activities .chips { margin-top: 6px; }
+.activities .start-pick { margin: 4px 0 10px; }
+.activities .workout-bar { margin: 4px 0 10px; }
+.activities .list li.activity-ask { flex-wrap: wrap; gap: 6px; }
+/* 16px: smaller fields make iOS zoom in on focus */
+.activities select.assign { flex: none; font: inherit; font-size: 16px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+.activities .list li.rest { cursor: default; }
+.activities .fold { margin-top: 10px; }
 /* tapped plan: progress per exercise (total reps, heaviest weight) */
 .plan-progress { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
 .plan-progress h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }

@@ -103,12 +103,20 @@
         <section id="activities" class="workout-plans activities">
           <div class="workout-plans-head">
             <h3>Other activities</h3>
-            <button type="button" class="ghost small" data-log-activity>+ Log activity</button>
+            <span>
+              <button type="button" class="ghost small" data-log-activity>+ Log</button>
+              <button type="button" class="ghost small" data-start-pick>▶ Start</button>
+            </span>
           </div>
+          <div id="activity-start-pick" class="chips start-pick" hidden></div>
+          <div id="activity-running" class="workout-bar running" hidden></div>
           <p id="activity-summary" class="hint"></p>
           <h4 id="activity-ask-head" hidden>Detected by your tracker</h4>
           <ul id="activity-ask" class="list"></ul>
-          <ul id="activity-list" class="list"></ul>
+          <details id="activity-history" class="fold activity-history" hidden>
+            <summary><h3>History</h3></summary>
+            <ul id="activity-list" class="list"></ul>
+          </details>
         </section>
         <!-- collapsible sections, closed by default -->
         <details id="my-exercises-section" class="fold">
@@ -270,7 +278,7 @@
   <dialog id="activity-dialog">
     <form>
       <h2>Log activity</h2>
-      <label>Sport<select name="sport"></select></label>
+      <label>Activity<select name="sport"></select></label>
       <label>Date<input name="date" type="date" required></label>
       <label>Start<input name="time" type="time" required></label>
       <label>Duration (min)<input name="minutes" type="number" min="1" step="1" inputmode="numeric" maxlength="4" required></label>

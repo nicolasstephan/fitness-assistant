@@ -9,6 +9,8 @@
 Where things live (private data repo `fitness-data`, cloned next to this repo as ../fitness-data):
     imports/polar/credentials.json         client id/secret + access token (shared by all machines; never in this public repo)
     imports/polar/history/YYYY-MM.json     every day/exercise ever fetched, per month (the API forgets after 28-30 days)
+    imports/polar/hr/YYYY-MM-DD.json       continuous heart rate as minute means, one file per day (the app compares
+                                           it with vagus nerve stimulation / meditation sessions)
     health/polar.json                      what the app reads (same shape as health/whoop.json)
 Local only: data/polar/raw/ (last download), data/polar/sync.log.
 
@@ -38,6 +40,7 @@ DATA_REPO = ROOT.parent / "fitness-data"  # local clone of the private data repo
 IMPORTS = DATA_REPO / "imports" / "polar"
 CRED = IMPORTS / "credentials.json"
 HISTORY = IMPORTS / "history"
+HR_DIR = IMPORTS / "hr"
 OUT = DATA_REPO / "health" / "polar.json"
 TRACKED = ["imports/polar", "health/polar.json"]  # the only paths this script commits
 
@@ -192,7 +195,7 @@ def fetch():
         end = start - timedelta(days=1)
     (RAW / "activities.json").write_text(json.dumps(acts, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{'activities (365 d)':28} {len(acts)} days")
-    # continuous HR stays local (raw only): ~288 samples a day would bloat the data repo
+    # continuous HR (samples every few seconds to minutes): kept as minute means per day, see merge_hr
     get("continuous-hr", "/v3/users/continuous-heart-rate", **{"from": str(today - timedelta(days=27)), "to": str(today)})
 
 
@@ -259,6 +262,30 @@ def merge_history():
             p.write_text(json.dumps(info, indent=1), encoding="utf-8")
     h = load_history()
     print(f"history: {changed} month file(s) changed;", ", ".join(f"{k} {len(v)}" for k, v in h.items() if k != "physicalInfo"))
+    merge_hr()
+
+
+def merge_hr():
+    """Continuous HR of the last download -> imports/polar/hr/YYYY-MM-DD.json: {"date", "hr": [[minute of day, bpm]]}.
+    Minute means of the samples; merged with the stored day (newer download wins per minute), written only on change."""
+    days = list_of(read_raw("continuous-hr"), "heart_rates")
+    changed = 0
+    for day in days:
+        per = {}
+        for smp in day.get("heart_rate_samples") or []:
+            hh, mm = smp.get("sample_time", "")[:5].split(":")
+            if smp.get("heart_rate"):
+                per.setdefault(int(hh) * 60 + int(mm), []).append(smp["heart_rate"])
+        if not per:
+            continue
+        f = HR_DIR / f"{day['date']}.json"
+        old = {m: v for m, v in json.loads(f.read_text(encoding="utf-8"))["hr"]} if f.exists() else {}
+        new = {**old, **{m: round(sum(v) / len(v)) for m, v in per.items()}}
+        if new != old:
+            HR_DIR.mkdir(parents=True, exist_ok=True)
+            f.write_text(json.dumps({"date": day["date"], "hr": sorted([m, v] for m, v in new.items())}, separators=(",", ":")), encoding="utf-8")
+            changed += 1
+    print(f"heart rate: {len(days)} day(s) downloaded, {changed} file(s) changed")
 
 
 # ---------- build: history -> health/polar.json (same shape as whoop.json)
