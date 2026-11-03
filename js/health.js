@@ -8,7 +8,7 @@ import { BEFORE_MIN } from "./hr.js";
 import { infoButton } from "./info.js";
 import {
   annotateDeviations, journalCard, lateWorkoutCard, trainingAfterCard, sleepGateCard, feelingCard,
-  readinessStrengthCard, supplementCard,
+  readinessStrengthCard, supplementCard, tirednessCard,
 } from "./insights.js";
 
 const DAY = 86400000;
@@ -699,6 +699,7 @@ export class HealthView {
     this.workoutsCard(trainingGroup, workouts);
     if (this.log?.sessions.length) readinessStrengthCard(this, trainingGroup, ctx);
     this.sessionsCard(sessionGroup, start);
+    tirednessCard(this, insightGroup, ctx);
     journalCard(this, insightGroup, ctx);
     lateWorkoutCard(this, insightGroup, ctx);
     trainingAfterCard(this, insightGroup, ctx);

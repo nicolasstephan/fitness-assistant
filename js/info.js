@@ -86,6 +86,10 @@ const INFO = {
     source: "Your check-in answers (Today), supplements taken and resting sessions, each paired with the night after: HRV, resting HR and sleep score as the difference from your normal (60 days before, same device), Polar's ANS charge, and how you felt the next day. WHOOP journal answers count too.",
     read: "Each cell is yes-days minus no-days. Green means better after a yes (e.g. HRV higher, resting HR lower), red worse. Look for several columns pointing the same way; one column alone is often noise. Shown from 5 yes and 5 no days.",
   },
+  "What makes you tired": {
+    source: "Everything recorded about a day (each sport by name, strength training, long, hard, late or back-to-back workouts, check-in answers, supplements, TENS and meditation, WHOOP journal) and about the night after it (short sleep, low HRV, low Nightly Recharge, late bedtime), against how you felt the next day and the day after. Tired = perceived fitness 1–2 in the check-in, or WHOOP's \"Experienced fatigue?\" before the check-in existed.",
+    read: "\"40% vs 15%\" means you were tired on 40% of the days after that factor and on 15% of the days without it. The most tiring factors are at the top. Check both columns: some things (like a long run) tire you most two days later. Needs 5 days with and without a factor.",
+  },
   "Late workouts vs. sleep": {
     source: "Workout end times (logged and from the tracker, walks left out) against when the tracker saw you fall asleep. The values are the night's sleep, HRV and resting HR compared with your normal, plus Polar's ANS charge.",
     read: "Compare the first row with the second: if late workouts come with a lower sleep score or HRV and a higher resting HR, train earlier where you can. The \"No workout\" row is the reference.",

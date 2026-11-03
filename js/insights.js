@@ -165,6 +165,130 @@ export function journalCard(view, parent, { days }) {
   });
 }
 
+// ---------- what makes you tired: factors on a day (or the night after it) vs. feeling 1 and 2 days later
+
+const FATIGUE_Q = "Experienced fatigue?"; // WHOOP journal, answered the morning after
+const SHORT_NIGHT = -45; // min vs. your normal
+/**
+ * Every factor is pinned to a calendar day x: what you did that day, or the night after it (the health day x+1).
+ * Outcomes on x+1 ("next day") and x+2: perceived fitness (check-in) and tired yes/no (check-in 1-2, before the
+ * check-in WHOOP's fatigue answer).
+ */
+export function tirednessCard(view, parent, { days, workouts }) {
+  const health = new Map(days.map((d) => [d.date, d]));
+  const night = (x) => health.get(shift(x, 1)); // the night after day x (and its journal: answers about day x)
+  const felt = (date) => health.get(date)?.felt ?? null;
+  const tired = (date) => {
+    const f = felt(date);
+    if (f != null) return f <= 2;
+    return night(date)?.journal?.[FATIGUE_Q] ?? null;
+  };
+  // workouts per day: what (strength, or the sport by name), minutes, hard minutes, last end
+  const byDay = new Map();
+  for (const w of workouts) {
+    const date = w.start.slice(0, 10);
+    const e = byDay.get(date) ?? { kinds: new Set(), min: 0, hard: 0, lastEnd: 0 };
+    e.kinds.add(w.cat === "Strength" ? "Strength training" : w.activity ?? w.cat);
+    e.min += w.durationMin ?? 0;
+    e.hard += hardMinutes(w);
+    e.lastEnd = Math.max(e.lastEnd, workoutEnd(w));
+    byDay.set(date, e);
+  }
+  // a day without a logged or tracked workout only counts as "no" when the tracker was worn that night
+  const worn = (x) => { const n = night(x); return !!n && (n.hrv != null || n.sleep?.asleepMin != null); };
+  const sport = (test) => (x) => (byDay.has(x) ? test(byDay.get(x), x) : worn(x) ? false : null);
+  const kinds = new Map();
+  for (const e of byDay.values()) for (const k of e.kinds) kinds.set(k, (kinds.get(k) ?? 0) + 1);
+
+  const factors = [
+    ...[...kinds].filter(([, n]) => n >= 3).sort((a, b) => b[1] - a[1])
+      .map(([k]) => ({ group: "Training", label: k, test: sport((e) => e.kinds.has(k)) })),
+    { group: "Training", label: "Any workout", test: sport(() => true) },
+    { group: "Training", label: "Workouts ≥ 60 min that day", test: sport((e) => e.min >= 60) },
+    { group: "Training", label: `≥ ${HARD_MIN} min in zones 4–5`, test: sport((e) => e.hard >= HARD_MIN) },
+    { group: "Training", label: "Training two days in a row", test: sport((e, x) => byDay.has(shift(x, -1))) },
+    {
+      group: "Training", label: `Workout < ${LATE_H} h before sleep`,
+      test: sport((e, x) => { const on = night(x)?.sleep?.onset; return on ? msOf(on) - e.lastEnd <= LATE_H * 60 * MIN && msOf(on) >= e.lastEnd : null; }),
+    },
+    {
+      group: "Night after", label: `Short night (${-SHORT_NIGHT}+ min under normal)`,
+      test: (x) => { const v = night(x)?.dev?.asleep; return v == null ? null : v < SHORT_NIGHT; },
+    },
+    {
+      group: "Night after", label: "HRV > 10% under normal",
+      test: (x) => { const v = night(x)?.dev?.hrv; return v == null ? null : v < Math.log(0.9); },
+    },
+    {
+      group: "Night after", label: "Nightly Recharge compromised or worse",
+      test: (x) => { const v = night(x)?.recharge; return v == null ? null : v <= 3; },
+    },
+    {
+      group: "Night after", label: "Fell asleep > 60 min after the gate",
+      test: (x) => { const n = night(x); return n?.sleep?.onset && n.bedtime ? onsetMin(n) > n.bedtime.gateEnd + 60 : null; },
+    },
+  ];
+  // journal answers about day x (check-in, supplements, resting sessions, WHOOP journal), except the outcome itself
+  const questions = new Set();
+  for (const d of days) for (const q of Object.keys(d.journal ?? {})) if (q !== FATIGUE_Q) questions.add(q);
+  for (const q of questions) {
+    factors.push({ group: "Journal", label: q.replace(/ the day before\?$/, "?"), test: (x) => night(x)?.journal?.[q] ?? null });
+  }
+
+  const dates = days.map((d) => d.date);
+  const rows = factors.map((f) => {
+    const yes = [], no = [];
+    for (const x of dates) {
+      const v = f.test(x);
+      if (v === true) yes.push(x);
+      else if (v === false) no.push(x);
+    }
+    const lag = (L) => {
+      const pick = (xs, get) => xs.map((x) => get(shift(x, L))).filter((v) => v != null);
+      const fy = pick(yes, felt), fn = pick(no, felt), ty = pick(yes, tired), tn = pick(no, tired);
+      const feltDiff = fy.length >= MIN_N && fn.length >= MIN_N ? mean(fy) - mean(fn) : null;
+      const rate = (xs) => (xs.filter(Boolean).length / xs.length) * 100;
+      const tiredGap = ty.length >= MIN_N && tn.length >= MIN_N ? { yes: rate(ty), no: rate(tn), n: ty.length } : null;
+      return { feltDiff, tiredGap };
+    };
+    return { ...f, yes: yes.length, no: no.length, l1: lag(1), l2: lag(2) };
+  }).filter((r) => r.yes >= 3 && r.no >= 3); // a factor that is (almost) always yes or no can't be compared
+  // most tiring first: the bigger of the two tiredness gaps, then the feeling drop
+  const score = (r) => Math.max(...[r.l1, r.l2].map((l) => (l.tiredGap ? l.tiredGap.yes - l.tiredGap.no : l.feltDiff != null ? -l.feltDiff * 25 : -Infinity)));
+  rows.sort((a, b) => score(b) - score(a) || b.yes - a.yes);
+
+  const feltCell = (l) => (l.feltDiff == null ? null
+    : { text: signed(l.feltDiff, 1), cls: Math.abs(l.feltDiff) < 0.3 ? "" : l.feltDiff < 0 ? "bad" : "good" });
+  const tiredCell = (l) => {
+    if (!l.tiredGap) return null;
+    const { yes, no, n } = l.tiredGap;
+    // (n) = days with an answer after a yes: a rate from 6 days is a rough hint, from 40 a pattern
+    return { text: `${Math.round(yes)}% vs ${Math.round(no)}% (${n})`, cls: Math.abs(yes - no) < 10 ? "" : yes > no ? "bad" : "good" };
+  };
+  const top = rows.filter((r) => score(r) >= 10).slice(0, 3).map((r) => r.label);
+  tableCard(view, parent, {
+    title: "What makes you tired",
+    sub: "Each factor on a day (or the night after it) vs. how you felt the next day and two days later: share of tired days after yes vs. no, and the change in perceived fitness (1–5)",
+    columns: [
+      { label: "Factor", get: (r) => r.label },
+      { label: "Kind", get: (r) => r.group },
+      { label: "Yes / no", get: (r) => `${r.yes} / ${r.no}`, num: true },
+      { label: "Tired next day", get: (r) => tiredCell(r.l1), num: true },
+      { label: "Tired 2 days later", get: (r) => tiredCell(r.l2), num: true },
+      { label: "Felt next day", get: (r) => feltCell(r.l1), num: true },
+      { label: "Felt 2 days later", get: (r) => feltCell(r.l2), num: true },
+    ],
+    rows,
+    empty: "Not enough days yet: answer perceived fitness in the daily check-in.",
+    notes: [
+      top.length ? `Most tiring so far: ${top.join(", ")}.` : null,
+      "Tired = perceived fitness 1–2 in the check-in; before the check-in, WHOOP's \"Experienced fatigue?\" answer. "
+        + "In brackets: how many days after a yes had an answer. \"Felt\" uses the check-in only. "
+        + "\"Night after\" factors are the night between the day and the next morning. " + NOISE_NOTE,
+    ],
+  });
+}
+
 // ---------- 2. late workouts vs. sleep
 
 const LATE_H = 3;
