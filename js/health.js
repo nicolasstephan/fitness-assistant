@@ -14,6 +14,10 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 const tUTC = (date) => Date.parse(`${date}T00:00:00Z`);
 const fmtDay = (t) => new Date(t).toLocaleDateString(undefined, { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", year: "numeric" });
 const fmtWeek = (t) => `Week of ${new Date(t).toLocaleDateString(undefined, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" })}`;
+// Polar Nightly Recharge (polar.py): overall status 1-6, ANS charge -10..+10, ANS and sleep charge status 1-5
+const RECHARGE = [null, "Very poor", "Poor", "Compromised", "OK", "Good", "Very good"];
+const CHARGE = [null, "much below usual", "below usual", "usual", "above usual", "much above usual"];
+const rechargeClass = (v) => (v <= 2 ? "bad" : v >= 5 ? "good" : "");
 const hm = (min) => `${Math.floor(min / 60)}:${String(Math.round(min % 60)).padStart(2, "0")}`;
 // WHOOP activity names grouped into a few categories (fixed order = fixed colors)
 const WORKOUT_CATEGORIES = [
@@ -270,9 +274,57 @@ export class HealthView {
       ` · updated ${new Date(this.doc.importedAt).toLocaleDateString()}` +
       (to < localToday() ? ` · no data since then, tap ⟳ to fetch` : "");
 
+    this.renderRecharge();
     const s = this.slice();
     this.renderTiles(s);
     this.renderCards(s);
+  }
+
+  /** The latest Nightly Recharge, above the range buttons (it is about this morning, not a period). */
+  renderRecharge() {
+    const el = this.root.querySelector("#health-recharge");
+    const d = [...this.doc.days].reverse().find((x) => x.recharge != null);
+    el.hidden = !d;
+    if (!d) return;
+    const today = localToday();
+    const yesterday = new Date(tUTC(today) - DAY).toISOString().slice(0, 10);
+    const when = d.date === today ? "last night" : d.date === yesterday ? "the night before yesterday"
+      : new Date(tUTC(d.date)).toLocaleDateString(undefined, { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" });
+    const part = (label, value, note) => {
+      const div = document.createElement("div");
+      div.className = "recharge-part";
+      const l = document.createElement("span");
+      l.className = "tile-label";
+      l.textContent = label;
+      const v = document.createElement("strong");
+      v.textContent = value;
+      div.append(l, v);
+      if (note) div.append(` ${note}`);
+      return div;
+    };
+    const head = document.createElement("div");
+    head.className = "recharge-head";
+    const label = document.createElement("div");
+    label.className = "tile-label";
+    label.textContent = `Nightly Recharge · ${when}`;
+    const value = document.createElement("div");
+    value.className = `tile-value ${rechargeClass(d.recharge)}`;
+    value.textContent = RECHARGE[d.recharge] ?? "–";
+    head.append(label, value);
+    const parts = document.createElement("div");
+    parts.className = "recharge-parts";
+    if (d.ansCharge != null) {
+      const ans = `${d.ansCharge > 0 ? "+" : ""}${d.ansCharge.toFixed(1)}`;
+      parts.append(part("ANS charge", ans, CHARGE[d.ansChargeStatus] ? `· ${CHARGE[d.ansChargeStatus]}` : ""));
+    }
+    if (d.sleepCharge != null) parts.append(part("Sleep charge", CHARGE[d.sleepCharge] ?? "–"));
+    if (d.date !== today) {
+      const note = document.createElement("div");
+      note.className = "tile-delta";
+      note.textContent = "Last night not synced yet: tap ⟳";
+      parts.append(note);
+    }
+    el.replaceChildren(head, parts);
   }
 
   renderTiles({ cur, prev, workouts, prevWorkouts }) {
@@ -462,6 +514,12 @@ export class HealthView {
     const round = (unit) => (d) => `${Math.round(d)} ${unit === "pts" && Math.round(d) === 1 ? "pt" : unit}`;
     const oneDecimal = (unit) => (d) => `${d.toFixed(1)}${unit ? ` ${unit}` : ""}`;
     const pct = { ticks: [0, 25, 50, 75, 100], unit: "%", format: (v) => `${Math.round(v)}` };
+    // Polar's Nightly Recharge status, 1-6 (ANS charge + sleep charge against your usual level)
+    if (cur.some((d) => d.recharge != null)) {
+      const word = (v) => (Number.isInteger(v) ? RECHARGE[v] : v.toFixed(1)); // a night is a word, an average a number
+      lineCard(sleepGroup, "Nightly Recharge", "Polar: ANS charge + sleep charge vs. your usual · 1 very poor, 2 poor, 3 compromised, 4 OK, 5 good, 6 very good",
+        (d) => d.recharge, { ticks: [1, 2, 3, 4, 5, 6], unit: "", format: word, tickFormat: (v) => `${v}` }, "Nightly Recharge", oneDecimal(""), true);
+    }
     if (fromWhoop) lineCard(sleepGroup, "Recovery", "WHOOP morning recovery score, %", (d) => d.recovery, pct, "Recovery %", round("pts"), true);
     // HRV: 7-day average against your 60-day normal range (see annotateHrv), per device
     {

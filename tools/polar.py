@@ -323,13 +323,16 @@ def build():
             "awakeMin": round(s.get("total_interruption_duration", 0) / 60),
         })
         d["sleepCycles"] = s.get("sleep_cycles")
+        d["sleepCharge"] = s.get("sleep_charge")  # 1-5: much below .. much above usual
     for k, r in h.get("recharge", {}).items():
         d = day(k)
         d["hrv"] = r.get("heart_rate_variability_avg")
         # Nightly Recharge averages over ~4 h from falling asleep; WHOOP's RHR comes from the last deep-sleep phase
         d["rhr"] = r.get("heart_rate_avg")
         d["sleep"]["respRate"] = r.get("breathing_rate_avg")
-        d["ansCharge"] = r.get("ans_charge")
+        d["ansCharge"] = r.get("ans_charge")  # -10 .. +10
+        d["ansChargeStatus"] = r.get("ans_charge_status")  # 1-5: much below .. much above usual
+        d["recharge"] = r.get("nightly_recharge_status")  # Nightly Recharge, 1-6: very poor .. very good
     for k, a in h.get("activities", {}).items():
         d = day(k)
         d.update({"steps": a.get("steps"), "kcal": a.get("calories"), "activeKcal": a.get("active_calories")})

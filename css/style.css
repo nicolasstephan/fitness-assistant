@@ -516,6 +516,10 @@ body:not([data-view="exercise"]) .layout { display: none; }
 .good { color: var(--good-text); }
 .bad { color: var(--bad-text); }
 .tile-delta.good, .tile-delta.bad { font-weight: 500; }
+/* this morning's Nightly Recharge, above the range buttons */
+.recharge { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+.recharge-parts { display: flex; flex-wrap: wrap; gap: 4px 20px; align-items: baseline; color: var(--muted); font-size: 13px; }
+.recharge-part strong { color: var(--text); font-weight: 600; margin-left: 6px; }
 .tile.sparse .tile-value { color: var(--muted); } /* average of only a few days */
 
 .card-group { margin-top: 24px; }
