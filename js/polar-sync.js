@@ -21,10 +21,29 @@ async function gh(cfg, method, path, body) {
     cache: "no-store",
   });
   if (res.ok) return res.status === 204 ? null : res.json();
-  if (res.status === 401) throw new Error("Token invalid or expired");
-  if (res.status === 403) throw new Error("Token needs “Actions: Read and write”");
-  if (res.status === 404) throw new Error("No Polar sync workflow in the data repo");
-  throw new Error(`GitHub error ${res.status}`);
+  throw new Error(await errorText(res, method));
+}
+
+/**
+ * GitHub answers 403 for more than missing permissions (rate limits, abuse detection), so the message
+ * says which one it was instead of always blaming the token.
+ */
+async function errorText(res, method) {
+  let message = "";
+  try {
+    message = (await res.json()).message ?? "";
+  } catch {
+    // no JSON body
+  }
+  if (res.status === 401) return "Token invalid or expired";
+  if (res.status === 404) return "No Polar sync workflow in the data repo";
+  if ((res.status === 403 || res.status === 429) && (/rate limit/i.test(message) || res.headers.get("x-ratelimit-remaining") === "0")) {
+    return "GitHub rate limit: try again in a few minutes";
+  }
+  if (res.status === 403 && /not accessible/i.test(message)) {
+    return method === "POST" ? "Token can't start the Polar sync: set “Actions: Read and write”" : "Token needs “Actions: Read” on the data repo";
+  }
+  return `Polar sync: GitHub ${res.status}${message ? ` · ${message}` : ""}`;
 }
 
 /** The newest run, or null. */
