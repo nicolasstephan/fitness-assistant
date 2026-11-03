@@ -20,6 +20,16 @@ const $ = (sel) => document.querySelector(sel);
 
 // iOS Safari ignores user-scalable=no; block its pinch-zoom gesture directly
 document.addEventListener("gesturestart", (e) => e.preventDefault());
+// decimal fields (dose, kg, weight) are text fields with the decimal keypad: a phone set to a comma locale
+// types "," there, which every reader expects as "."
+document.addEventListener("input", (e) => {
+  const f = e.target;
+  if (f instanceof HTMLInputElement && f.inputMode === "decimal" && f.value.includes(",")) {
+    const at = f.selectionStart;
+    f.value = f.value.replaceAll(",", ".");
+    if (at != null) f.setSelectionRange(at, at);
+  }
+});
 
 const viewer = new MuscleViewer($("#viewer"));
 const health = new HealthView($("#health-view"));

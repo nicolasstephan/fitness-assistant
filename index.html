@@ -111,8 +111,6 @@
           <div id="activity-start-pick" class="chips start-pick" hidden></div>
           <div id="activity-running" class="workout-bar running" hidden></div>
           <p id="activity-summary" class="hint"></p>
-          <h4 id="activity-ask-head" hidden>Detected by your tracker</h4>
-          <ul id="activity-ask" class="list"></ul>
           <details id="activity-history" class="fold activity-history" hidden>
             <summary><h3>History</h3></summary>
             <ul id="activity-list" class="list"></ul>
@@ -198,7 +196,7 @@
           </div>
           <div class="checkin-q">
             <label for="checkin-weight">Body weight <small>kg, morning</small></label>
-            <input id="checkin-weight" type="number" inputmode="decimal" step="0.1" min="20" max="400" maxlength="6" placeholder="–">
+            <input id="checkin-weight" type="text" inputmode="decimal" maxlength="6" autocomplete="off" placeholder="–">
           </div>
   
           <div class="checkin-supp">

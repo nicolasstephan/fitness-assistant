@@ -2,8 +2,8 @@
 //   - logged by hand or recorded with Start/Stop (training-log activities), joined with the tracker workout that
 //     overlaps them in time;
 //   - tracker workouts that already name the sport (WHOOP "Skateboarding", Polar "Running", ...);
-//   - tracker workouts without a sport (the Loop detects "Other indoor/outdoor"): listed as unknown until
-//     assigned; the activity is never inferred.
+//   (tracker workouts without a sport, e.g. old Loop detections "Other indoor", are not listed: automatic
+//   detection is off and the activity is never inferred)
 // joinLog() is shared with the Health view, which lists manual workouts and activities with their tracker data.
 import { normalizeLog, newId, localNow, activeActivity } from "./training-log.js";
 import { trackerEnd } from "./workouts.js";
@@ -12,10 +12,7 @@ import { SPORTS, sportById, sportOfTracker } from "./data/sports.js";
 const MIN = 60000;
 const DAY = 86400000;
 const TOLERANCE = 15 * MIN;
-const ASK_DAYS = 30; // unlabeled detections older than this are no longer asked about
-const MIN_DETECTION_MIN = 10;
-// tracker labels that say "some activity" without a sport; anything else (Walking, Strength Trainer, ...) is not asked
-const GENERIC = new Set(["other indoor", "other outdoor", "other", "activity"]);
+const SUMMARY_DAYS = 30;
 const LIST_LENGTH = 20;
 const STARTED_KEY = "fa.activityStartedAt"; // { id: ms } exact start of a recording (the log keeps minutes)
 
@@ -94,22 +91,17 @@ export function combinedWorkouts(log, trackerWorkouts) {
 }
 
 /**
- * All activities, newest first: [{ id?, sport, start, end, tracker?, auto? }] (auto = from a tracker label,
- * not in the log), plus the unlabeled tracker workouts to ask about: [{ t, key }].
+ * All activities, newest first: [{ id?, sport, start, end, tracker?, auto? }] (auto = from a tracker workout
+ * that names the sport, not in the log).
  */
-export function combineActivities(log, trackerWorkouts, now = localNow()) {
+export function combineActivities(log, trackerWorkouts) {
   const { activities: logged, free } = joinLog(log, trackerWorkouts);
   const auto = [];
-  const unlabeled = [];
   for (const t of free) {
     const sport = sportOfTracker(t.activity);
     if (sport) auto.push({ sport: sport.id, start: t.start, end: trackerEnd(t), tracker: t, auto: true });
-    else if (GENERIC.has((t.activity ?? "").toLowerCase()) && !log.ignored.includes(trackerKey(t))
-      && (t.durationMin ?? 0) >= MIN_DETECTION_MIN && toMs(now) - toMs(t.start) < ASK_DAYS * DAY) unlabeled.push(t);
   }
-  const activities = [...logged, ...auto].sort((a, b) => b.start.localeCompare(a.start));
-  const ask = unlabeled.reverse().map((t) => ({ t, key: trackerKey(t) }));
-  return { activities, ask };
+  return { activities: [...logged, ...auto].sort((a, b) => b.start.localeCompare(a.start)) };
 }
 
 const readStarted = () => { try { return JSON.parse(localStorage.getItem(STARTED_KEY)) ?? {}; } catch { return {}; } };
@@ -126,7 +118,6 @@ export class ActivityView {
     this.selected = null; // id of the row whose muscles are shown
     this.timer = null;
     root.addEventListener("click", (e) => this.onClick(e));
-    root.addEventListener("change", (e) => this.onAssign(e));
     this.setupDialog();
   }
 
@@ -164,18 +155,6 @@ export class ActivityView {
       if (sportById.get(row?.sport)?.rest) return; // no muscles to show
       this.select(this.selected === t.dataset.showActivity ? null : t.dataset.showActivity, row);
     }
-  }
-
-  /** "Assign activity" picker of a tracker detection: label it, or mark it as none of these. */
-  onAssign(e) {
-    const sel = e.target.closest("[data-assign]");
-    if (!sel || !sel.value) return;
-    const log = this.getLog();
-    const item = this.combined.ask.find((x) => x.key === sel.dataset.assign);
-    if (!item) return;
-    if (sel.value === "none") return this.saveLog(normalizeLog({ ...log, ignored: [...log.ignored, item.key] }));
-    const a = { id: newId(), sport: sel.value, start: item.t.start, end: trackerEnd(item.t), tracker: item.key };
-    this.saveLog(normalizeLog({ ...log, activities: [...log.activities, a] }));
   }
 
   stop(log, id) {
@@ -260,8 +239,7 @@ export class ActivityView {
   render() {
     const log = this.getLog();
     const tracker = this.getTracker();
-    this.combined = combineActivities(log, tracker?.workouts);
-    const { activities, ask } = this.combined;
+    const { activities } = combineActivities(log, tracker?.workouts);
     this.rows = new Map();
 
     this.renderRunning(activeActivity(log));
@@ -269,7 +247,7 @@ export class ActivityView {
       el("button", { type: "button", className: "ghost small", dataset: { startSport: s.id }, textContent: s.name })));
 
     // last 30 days per activity
-    const since = toMs(localNow()) - ASK_DAYS * DAY;
+    const since = toMs(localNow()) - SUMMARY_DAYS * DAY;
     const totals = new Map();
     for (const a of activities.filter((x) => toMs(x.start) >= since)) {
       const t = totals.get(a.sport) ?? { n: 0, min: 0 };
@@ -279,24 +257,13 @@ export class ActivityView {
     }
     this.root.querySelector("#activity-summary").textContent = totals.size
       ? `Last 30 days: ${[...totals].map(([s, t]) => `${sportById.get(s)?.short ?? nameOf(s)} ${t.n}× · ${fmtDuration(t.min)}`).join(" · ")}`
-      : activities.length ? "Nothing in the last 30 days." : "Start or log an activity, or assign what your tracker detected.";
+      : activities.length ? "Nothing in the last 30 days." : "Start or log an activity.";
 
     const trackerLine = (t) => {
       const parts = [t.durationMin != null && `${t.durationMin} min`, t.avgHr && `HR ${t.avgHr} / ${t.maxHr}`,
         t.kcal != null && `${Math.round(t.kcal)} kcal`, t.cardioLoad != null && `load ${t.cardioLoad}`, t.strain != null && `strain ${t.strain.toFixed(1)}`].filter(Boolean);
       return el("small", { className: "tracker-match", textContent: `${t.source ?? tracker?.source ?? "Tracker"}: ${parts.join(" · ")}` });
     };
-
-    this.root.querySelector("#activity-ask").replaceChildren(...ask.map(({ t, key }) =>
-      el("li", { className: "activity-ask" },
-        el("div", { className: "li-text" },
-          el("span", { textContent: `${fmtDay(t.start)} · ${t.start.slice(11)} · unknown activity` }),
-          trackerLine(t)),
-        el("select", { className: "assign", dataset: { assign: key }, ariaLabel: "Assign activity" },
-          el("option", { value: "", textContent: "Assign activity…" }),
-          ...SPORTS.map((s) => el("option", { value: s.id, textContent: s.name })),
-          el("option", { value: "none", textContent: "None of these" })))));
-    this.root.querySelector("#activity-ask-head").hidden = !ask.length;
 
     const list = this.root.querySelector("#activity-list");
     list.replaceChildren(...activities.slice(0, LIST_LENGTH).map((a) => {

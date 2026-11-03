@@ -42,6 +42,7 @@ CRED = IMPORTS / "credentials.json"
 HISTORY = IMPORTS / "history"
 HR_DIR = IMPORTS / "hr"
 OUT = DATA_REPO / "health" / "polar.json"
+REMOVED = IMPORTS / "removed-exercises.json"  # exercise ids deleted on purpose (e.g. auto-detections); never re-imported
 TRACKED = ["imports/polar", "health/polar.json"]  # the only paths this script commits
 
 AUTH_URL = "https://flow.polar.com/oauth2/authorization"
@@ -239,8 +240,11 @@ def merge_history():
     """Merge the last download (data/polar/raw) into the monthly history files; write only months that change."""
     HISTORY.mkdir(parents=True, exist_ok=True)
     months = {}
+    removed = set(json.loads(REMOVED.read_text(encoding="utf-8"))) if REMOVED.exists() else set()
     for name, (raw, key, day_of, id_of) in STREAMS.items():
         rows = list_of(read_raw(raw), key)
+        if name == "exercises":
+            rows = [r for r in rows if r.get("id") not in removed]
         if name == "cardioLoad":
             rows = [r for r in rows if r.get("cardio_load", -1) >= 0]  # -1 = not available yet
         for r in rows:

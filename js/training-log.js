@@ -235,7 +235,7 @@ export class LogDialog {
     row.className = "set-row";
     row.innerHTML = `<span class="set-no"></span>
       <label>Reps<input name="reps" type="number" inputmode="numeric" min="1" step="1" maxlength="4"></label>
-      <label>Weight kg<input name="kg" type="number" inputmode="decimal" min="0" step="0.5" maxlength="6" placeholder="0"></label>
+      <label>Weight kg<input name="kg" type="text" inputmode="decimal" maxlength="6" placeholder="0" autocomplete="off"></label>
       <button type="button" class="icon-btn" data-remove-set aria-label="Remove set">×</button>`;
     row.querySelector("[name=reps]").value = reps;
     row.querySelector("[name=kg]").value = kg || "";
