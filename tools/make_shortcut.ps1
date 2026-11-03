@@ -1,22 +1,22 @@
-# Creates (or refreshes) the "Fitness Assistant" desktop shortcut: the live site in Firefox (where the
-# app's sync settings live; they are per browser), with the hub icon (FA-60, black mark + thin white outline).
-# Without Firefox it opens in the default browser. Re-run after moving the project folder.
+# Creates (or refreshes) the "Fitness Assistant" desktop shortcut: the live site in Chrome (where the app's sync
+# settings live since 2026-11-03; they are per browser), with the hub icon (FA-60, black mark + thin white outline).
+# Without Chrome it opens in the default browser. Re-run after moving the project folder.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $url = "https://nicolasstephan.github.io/fitness-assistant/"
 $icon = Join-Path $root "icons\fitness-assistant.ico"
 
-$firefox = @(
-    "$env:ProgramFiles\Mozilla Firefox\firefox.exe",
-    "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe",
-    "$env:LOCALAPPDATA\Mozilla Firefox\firefox.exe"
+$chrome = @(
+    "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+    "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+    "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 $lnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Fitness Assistant.lnk"
 $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
-if ($firefox) {
-    $s.TargetPath = $firefox
-    $s.Arguments = "--new-window $url"
+if ($chrome) {
+    $s.TargetPath = $chrome
+    $s.Arguments = $url   # a tab in the open Chrome window, not a new window (Nicolas, 2026-11-03)
 } else {
     $s.TargetPath = $url
     $s.Arguments = ""
