@@ -5,6 +5,7 @@ import { versionOn } from "./supplements.js";
 import { combinedWorkouts } from "./activities.js";
 import { SPORTS, sportById } from "./data/sports.js";
 import { BEFORE_MIN } from "./hr.js";
+import { infoButton } from "./info.js";
 
 const DAY = 86400000;
 const RANGES = { 7: 7, 30: 30, 90: 90, 365: 365, all: Infinity };
@@ -18,6 +19,16 @@ const fmtWeek = (t) => `Week of ${new Date(t).toLocaleDateString(undefined, { ti
 const RECHARGE = [null, "Very poor", "Poor", "Compromised", "OK", "Good", "Very good"];
 const CHARGE = [null, "much below usual", "below usual", "usual", "above usual", "much above usual"];
 const rechargeClass = (v) => (v <= 2 ? "bad" : v >= 5 ? "good" : "");
+// SleepWise bedtimes are minutes from midnight before the wake-up day (23:15 = -45)
+const clock = (m) => { const x = ((Math.round(m) % 1440) + 1440) % 1440; return `${String(Math.floor(x / 60)).padStart(2, "0")}:${String(x % 60).padStart(2, "0")}`; };
+// sleep onset ("YYYY-MM-DDTHH:MM", local) in the same minutes, folded into -12 h .. +12 h around that midnight
+const onsetMin = (d) => {
+  if (!d.sleep?.onset) return null;
+  let m = (Date.parse(`${d.sleep.onset}:00Z`) - tUTC(d.date)) / 60000;
+  while (m > 720) m -= 1440;
+  while (m < -720) m += 1440;
+  return m;
+};
 const hm = (min) => `${Math.floor(min / 60)}:${String(Math.round(min % 60)).padStart(2, "0")}`;
 // WHOOP activity names grouped into a few categories (fixed order = fixed colors)
 const WORKOUT_CATEGORIES = [
@@ -280,10 +291,11 @@ export class HealthView {
     this.renderCards(s);
   }
 
-  /** The latest Nightly Recharge, above the range buttons (it is about this morning, not a period). */
+  /** The latest Nightly Recharge and SleepWise values, above the range buttons (about this morning, not a period). */
   renderRecharge() {
     const el = this.root.querySelector("#health-recharge");
-    const d = [...this.doc.days].reverse().find((x) => x.recharge != null);
+    const latest = (has) => [...this.doc.days].reverse().find(has);
+    const d = latest((x) => x.recharge != null);
     el.hidden = !d;
     if (!d) return;
     const today = localToday();
@@ -300,13 +312,15 @@ export class HealthView {
       v.textContent = value;
       div.append(l, v);
       if (note) div.append(` ${note}`);
+      const i = infoButton(label);
+      if (i) div.append(i);
       return div;
     };
     const head = document.createElement("div");
     head.className = "recharge-head";
     const label = document.createElement("div");
     label.className = "tile-label";
-    label.textContent = `Nightly Recharge · ${when}`;
+    label.append(`Nightly Recharge · ${when}`, infoButton("Nightly Recharge"));
     const value = document.createElement("div");
     value.className = `tile-value ${rechargeClass(d.recharge)}`;
     value.textContent = RECHARGE[d.recharge] ?? "–";
@@ -318,6 +332,13 @@ export class HealthView {
       parts.append(part("ANS charge", ans, CHARGE[d.ansChargeStatus] ? `· ${CHARGE[d.ansChargeStatus]}` : ""));
     }
     if (d.sleepCharge != null) parts.append(part("Sleep charge", CHARGE[d.sleepCharge] ?? "–"));
+    const al = latest((x) => x.alertness);
+    if (al) {
+      const a = al.alertness;
+      parts.append(part("Alertness", a.grade.toFixed(1), `· ${a.class ?? ""}${a.prediction ? " (forecast)" : ""}`));
+    }
+    const bt = latest((x) => x.bedtime);
+    if (bt) parts.append(part("Body-clock bedtime", `${clock(bt.bedtime.gateStart)}–${clock(bt.bedtime.gateEnd)}`, "· sleep gate"));
     if (d.date !== today) {
       const note = document.createElement("div");
       note.className = "tile-delta";
@@ -360,7 +381,9 @@ export class HealthView {
         div.className = "tile";
         const label = document.createElement("div");
         label.className = "tile-label";
-        label.textContent = t.label;
+        label.append(t.label);
+        const info = infoButton(t.label);
+        if (info) label.append(info);
         const value = document.createElement("div");
         value.className = "tile-value";
         value.textContent = t.value == null ? "–" : t.fmt(t.value);
@@ -579,6 +602,29 @@ export class HealthView {
       (d) => d.sleep.performance, pct, "Sleep performance %", round("pts"), true);
     if (fromPolar) lineCard(sleepGroup, "Sleep score", "Polar: duration, interruptions, continuity, deep and REM sleep, 1–100",
       (d) => d.sleep.score, { ...pct, unit: "" }, "Sleep score", round("pts"), true);
+    // Polar SleepWise: daytime alertness grade (0-10) and the body clock's sleep gate vs. when you fell asleep
+    if (cur.some((d) => d.alertness)) lineCard(sleepGroup, "Alertness", "Polar SleepWise: expected daytime alertness from recent sleep and body clock, 0–10",
+      (d) => d.alertness?.grade ?? null, { ticks: [0, 2, 4, 6, 8, 10], tickFormat: (v) => `${v}`, format: (v) => v.toFixed(1) }, "Alertness", oneDecimal(""), true);
+    if (cur.some((d) => d.bedtime)) {
+      const points = cur.map((d) => ({ t: d.t, v: onsetMin(d), day: d }));
+      const band = cur.map((d) => ({ t: d.t, lo: d.bedtime?.gateStart ?? null, hi: d.bedtime?.gateEnd ?? null }));
+      const vals = [...points.map((p) => p.v), ...band.flatMap((b) => [b.lo, b.hi])].filter((v) => v != null);
+      const ticks = [];
+      for (let m = Math.floor(Math.min(...vals) / 60) * 60; m <= Math.ceil(Math.max(...vals) / 60) * 60; m += 60) ticks.push(m);
+      const byT = new Map(cur.map((d) => [d.t, d]));
+      this.card(sleepGroup, "Bedtime vs. body clock", "When you fell asleep vs. the sleep gate of your body clock (Polar SleepWise), local time",
+        (el) => lineChart(el, points, {
+          color: blue, describe: fmtDay, gaps, marks, ticks, format: clock, baseLabel: "fell asleep",
+          band: { points: band, label: "sleep gate" },
+        }),
+        [
+          { label: "Date", get: (p) => new Date(p.t).toISOString().slice(0, 10) },
+          { label: "Fell asleep", get: (p) => (p.v == null ? null : clock(p.v)), num: true },
+          { label: "Sleep gate", get: (p) => { const b = byT.get(p.t)?.bedtime; return b ? `${clock(b.gateStart)}–${clock(b.gateEnd)}` : null; }, num: true },
+        ],
+        points,
+        [{ name: "Fell asleep", color: blue, line: true }, { name: "Sleep gate", color: blue, area: true }]);
+    }
 
     // sleep stages, hours; rolling average and trend of the total
     const stages = [
@@ -873,6 +919,8 @@ export class HealthView {
     const head = document.createElement("header");
     const h = document.createElement("h2");
     h.textContent = title;
+    const info = infoButton(/^By (week|month)$/.test(title) ? "By period" : title);
+    if (info) h.append(" ", info);
     const sub = document.createElement("p");
     sub.className = "card-sub";
     sub.textContent = subtitle;

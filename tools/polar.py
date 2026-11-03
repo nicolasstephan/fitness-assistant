@@ -213,6 +213,11 @@ def read_raw(name):
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
+def wake_date(iso):
+    """The morning a night belongs to (like sleep and Nightly Recharge): a time from noon on counts for the next day."""
+    return (datetime.fromisoformat(iso[:19]) + timedelta(hours=12)).date().isoformat()
+
+
 STREAMS = {
     # name: (raw file, list key, record -> date key, record -> id)
     "sleep": ("sleep", "nights", lambda r: r["date"], lambda r: r["date"]),
@@ -220,6 +225,9 @@ STREAMS = {
     "activities": ("activities", "activities", lambda r: r["start_time"][:10], lambda r: r["start_time"][:10]),
     "cardioLoad": ("cardio-load", "cardio_load", lambda r: r["date"], lambda r: r["date"]),
     "exercises": ("exercises", "exercises", lambda r: r["start_time"][:10], lambda r: r["id"]),
+    # SleepWise: a prediction for the coming day is replaced by its history record in a later download
+    "alertness": ("sleepwise-alertness", "", lambda r: wake_date(r["sleep_period_start_time"]), lambda r: wake_date(r["sleep_period_start_time"])),
+    "bedtime": ("sleepwise-bedtime", "", lambda r: wake_date(r["preferred_sleep_period_start_time"]), lambda r: wake_date(r["preferred_sleep_period_start_time"])),
 }
 
 
@@ -337,6 +345,35 @@ def build():
         d["ansCharge"] = r.get("ans_charge")  # -10 .. +10
         d["ansChargeStatus"] = r.get("ans_charge_status")  # 1-5: much below .. much above usual
         d["recharge"] = r.get("nightly_recharge_status")  # Nightly Recharge, 1-6: very poor .. very good
+    def rel_min(iso, day_key, offset_min):
+        """UTC time -> local minutes from midnight before the wake-up day, e.g. 23:15 -> -45, 00:05 -> 5."""
+        return round((datetime.fromisoformat(iso[:19]) - datetime.fromisoformat(day_key)).total_seconds() / 60) + offset_min
+
+    def utc_offset_min(k):
+        """The night's UTC offset from its sleep record ('...+01:00'); SleepWise times are UTC and its bedtime
+        records say offset 0 even in winter time, so the sleep record is the reference."""
+        start = h.get("sleep", {}).get(k, {}).get("sleep_start_time", "")
+        m = re.search(r"([+-])(\d\d):(\d\d)$", start)
+        if m:
+            return (1 if m[1] == "+" else -1) * (int(m[2]) * 60 + int(m[3]))
+        return h.get("alertness", {}).get(k, {}).get("sleep_timezone_offset_minutes", 0)
+
+    for k, a in h.get("alertness", {}).items():
+        # SleepWise alertness: 0-10 grade for the day after this night, from sleep and the body clock
+        if a.get("grade") is None:
+            continue
+        day(k)["alertness"] = {
+            "grade": a["grade"], "class": (a.get("grade_classification") or "").rsplit("_", 1)[-1].lower() or None,
+            "prediction": a.get("result_type") == "ALERTNESS_TYPE_PREDICTION", "estimate": a.get("validity") == "VALIDITY_ESTIMATE",
+        }
+    for k, b in h.get("bedtime", {}).items():
+        # SleepWise circadian bedtime: the body clock's preferred 8-h sleep window and the 30-min "sleep gate"
+        off = utc_offset_min(k)
+        day(k)["bedtime"] = {
+            "start": rel_min(b["preferred_sleep_period_start_time"], k, off), "end": rel_min(b["preferred_sleep_period_end_time"], k, off),
+            "gateStart": rel_min(b["sleep_gate_start_time"], k, off), "gateEnd": rel_min(b["sleep_gate_end_time"], k, off),
+            "estimate": b.get("validity") == "VALIDITY_ESTIMATE",
+        }
     for k, a in h.get("activities", {}).items():
         d = day(k)
         d.update({"steps": a.get("steps"), "kcal": a.get("calories"), "activeKcal": a.get("active_calories")})
