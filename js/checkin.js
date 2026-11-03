@@ -66,7 +66,7 @@ export function checkinQuestions(e) {
   if (e.alcohol != null) q["Have any alcoholic drinks?"] = e.alcohol; // same wording as the WHOOP journal
   if (e.lateCaffeine != null) q["Caffeine after 2 pm?"] = e.lateCaffeine;
   if (e.stress != null) q["High stress (4–5)?"] = e.stress >= 4;
-  if (e.fitness != null) q["Felt unfit: tired or foggy (1–2)?"] = e.fitness <= 2;
+  // perceived fitness is not a question here: it is an outcome ("felt") of the night before, see insights.js
   return q;
 }
 

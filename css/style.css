@@ -533,6 +533,9 @@ body:not([data-view="exercise"]) .layout { display: none; }
 
 .card-group { margin-top: 24px; }
 .card-group > h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+/* cross-reference tables: the label column keeps a readable width, the numbers scroll sideways on phones */
+.card.insight .data-table td:first-child { min-width: 9.5em; }
+.card-group > .group-note { margin: -4px 0 10px; font-size: 12px; color: var(--muted); max-width: 70ch; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 12px; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; min-width: 0; }
 .card > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }

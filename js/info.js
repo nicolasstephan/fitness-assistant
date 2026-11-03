@@ -82,9 +82,33 @@ const INFO = {
     source: "Averages of the daily values per week or month; workouts counted per period.",
     read: "Partial weeks or months at the edges of the range rest on fewer days (see the Days column).",
   },
-  "Journal vs. HRV": {
-    source: "Your answers in the daily check-in (Today) compared with that night's HRV, in % from your 60-night normal. Shown once a question has at least 5 yes and 5 no answers.",
-    read: "A clear difference hints at an effect (for example alcohol lowering HRV), but it is a correlation, not proof. More answers make it more reliable.",
+  "Journal vs. recovery": {
+    source: "Your check-in answers (Today), supplements taken and resting sessions, each paired with the night after: HRV, resting HR and sleep score as the difference from your normal (60 days before, same device), Polar's ANS charge, and how you felt the next day. WHOOP journal answers count too.",
+    read: "Each cell is yes-days minus no-days. Green means better after a yes (e.g. HRV higher, resting HR lower), red worse. Look for several columns pointing the same way; one column alone is often noise. Shown from 5 yes and 5 no days.",
+  },
+  "Late workouts vs. sleep": {
+    source: "Workout end times (logged and from the tracker, walks left out) against when the tracker saw you fall asleep. The values are the night's sleep, HRV and resting HR compared with your normal, plus Polar's ANS charge.",
+    read: "Compare the first row with the second: if late workouts come with a lower sleep score or HRV and a higher resting HR, train earlier where you can. The \"No workout\" row is the reference.",
+  },
+  "Training vs. the next nights": {
+    source: "Each day's workouts by category (and minutes in heart-rate zones 4–5 from the tracker) against the next two nights, compared with your normal, and the next day's check-in feeling.",
+    read: "Shows how much a kind of day costs and how fast you bounce back: if HRV is still low in night 2, that kind of session needs more than a day of recovery. Compare with \"Rest day\".",
+  },
+  "Bedtime vs. sleep": {
+    source: "When you fell asleep against the Polar SleepWise sleep gate of that night, grouped; the night's sleep and HRV vs. your normal, that day's SleepWise alertness and your check-in feeling.",
+    read: "If the late rows are clearly worse than \"Around the gate\", going to bed on your body clock pays off. Very early nights can be worse too: falling asleep is harder before the gate.",
+  },
+  "Supplement protocols": {
+    source: "Your supplement protocol versions (Today > Edit protocol) as periods, with the average HRV, resting HR, sleep score, ANS charge and feeling in each. Raw values, split per device.",
+    read: "A change after a new protocol is a hint, not proof: season, training and sleep change too. Give a new protocol a few weeks before judging, and change one thing at a time.",
+  },
+  "How you feel vs. the numbers": {
+    source: "Perceived fitness from the daily check-in (1–5) against the same morning's Nightly Recharge, ANS charge, HRV (vs. normal), SleepWise alertness and sleep score.",
+    read: "\"r\" is the correlation: around 0 no link, 0.4+ a clear one. If your feeling tracks the numbers, trust either; if not, the mismatch days are the interesting ones (e.g. feeling fine while recovery is low, which often comes before getting ill or overreaching).",
+  },
+  "Readiness vs. strength": {
+    source: "Every logged exercise compared with its previous session (estimated 1-rep max with weight, best set's reps without), grouped by that morning's Polar Nightly Recharge or WHOOP recovery.",
+    read: "If sessions on low-readiness mornings are clearly worse, plan heavy days for good mornings and keep low mornings light. If there's no difference, readiness doesn't need to decide your strength days.",
   },
   "Sessions vs. heart rate": {
     source: "Polar Loop continuous heart rate (one value every ~5 minutes at rest) around each TENS or meditation session, against the 20 minutes before it.",

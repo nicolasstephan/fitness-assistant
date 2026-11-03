@@ -6,6 +6,10 @@ import { combinedWorkouts } from "./activities.js";
 import { SPORTS, sportById } from "./data/sports.js";
 import { BEFORE_MIN } from "./hr.js";
 import { infoButton } from "./info.js";
+import {
+  annotateDeviations, journalCard, lateWorkoutCard, trainingAfterCard, sleepGateCard, feelingCard,
+  readinessStrengthCard, supplementCard,
+} from "./insights.js";
 
 const DAY = 86400000;
 const RANGES = { 7: 7, 30: 30, 90: 90, 365: 365, all: Infinity };
@@ -193,20 +197,27 @@ export class HealthView {
 
   /** Days in the selected range, plus the equally long period before it (for deltas). */
   slice() {
-    const days = this.calendar().map((d) => ({
-      ...d,
-      t: tUTC(d.date),
-      // assumed supplement intake < real WHOOP journal answers < explicit check-in answers
-      journal: this.journal
-        ? {
-          ...supplementQuestions(this.journal.days[d.date], versionOn(this.journal.supplements, d.date)),
-          ...d.journal,
-          ...checkinQuestions(this.journal.days[d.date]),
-          ...this.sessionQuestions(d.date),
-        }
-        : { ...d.journal, ...this.sessionQuestions(d.date) },
-    }));
+    const days = this.calendar().map((d) => {
+      // a health day is the night ending that morning: the check-in and supplements of the day before act on it
+      // (WHOOP's journal already sits on the night after, its answers are about the previous day)
+      const before = new Date(tUTC(d.date) - DAY).toISOString().slice(0, 10);
+      return {
+        ...d,
+        t: tUTC(d.date),
+        // assumed supplement intake < real WHOOP journal answers < explicit check-in answers
+        journal: this.journal
+          ? {
+            ...supplementQuestions(this.journal.days[before], versionOn(this.journal.supplements, before)),
+            ...d.journal,
+            ...checkinQuestions(this.journal.days[before]),
+            ...this.sessionQuestions(d.date),
+          }
+          : { ...d.journal, ...this.sessionQuestions(d.date) },
+        felt: this.journal?.days[d.date]?.fitness ?? null, // perceived fitness that day (1-5)
+      };
+    });
     annotateHrv(days); // on every day, so the first days of the range still get a 60-day baseline
+    annotateDeviations(days); // resting HR, sleep score, sleep time vs. the same kind of normal (insights.js)
     const end = days.at(-1).t;
     const n = RANGES[this.range];
     const start = n === Infinity ? days[0].t : end - (n - 1) * DAY;
@@ -217,7 +228,9 @@ export class HealthView {
     const covered = (ds) => ds.filter(hasData).length;
     // both periods need data on at least half their days, e.g. not right after the import stopped
     const prev = covered(cur) >= cur.length / 2 && covered(prevDays) >= covered(cur) / 2 ? prevDays : [];
-    const all = this.log ? combinedWorkouts(this.log, this.doc.workouts) : this.doc.workouts;
+    const all = (this.log ? combinedWorkouts(this.log, this.doc.workouts) : this.doc.workouts)
+      .filter((w) => w.start)
+      .map((w) => ({ ...w, cat: WORKOUT_CATEGORIES[categoryIndex(w)].label }));
     const workouts = all
       .map((w) => ({ ...w, t: tUTC(w.start.slice(0, 10)) }))
       .filter((w) => w.t >= start);
@@ -225,7 +238,7 @@ export class HealthView {
       const t = tUTC(w.start.slice(0, 10));
       return t >= prevStart && t < start;
     });
-    return { days, cur, prev, workouts, prevWorkouts, start, end, gaps: gapsIn(cur) };
+    return { days, cur, prev, workouts, prevWorkouts, allWorkouts: all, start, end, gaps: gapsIn(cur) };
   }
 
   /**
@@ -450,26 +463,37 @@ export class HealthView {
       .filter(Boolean);
   }
 
-  renderCards({ days, cur, workouts, start, end, gaps }) {
+  renderCards({ days, cur, workouts, allWorkouts, start, end, gaps }) {
     const root = this.root.querySelector("#health-cards");
     root.replaceChildren();
     // cards in titled groups; groups that end up empty are removed at the end
-    const group = (title) => {
+    const group = (title, note) => {
       const section = document.createElement("section");
       section.className = "card-group";
       const h = document.createElement("h2");
       h.textContent = title;
       const grid = document.createElement("div");
       grid.className = "cards";
-      section.append(h, grid);
+      section.append(h);
+      if (note) {
+        const p = document.createElement("p");
+        p.className = "group-note";
+        p.textContent = note;
+        section.append(p);
+      }
+      section.append(grid);
       root.appendChild(section);
       return grid;
     };
+    // what happened (charts by area), then why (cross-references), then the overview
     const sleepGroup = group("Recovery & sleep");
     const activityGroup = group("Activity");
     const trainingGroup = group("Training");
     const sessionGroup = group("Resting sessions");
+    const insightGroup = group("What affects your recovery",
+      "Your data cross-referenced: all days, not only the selected range, because these comparisons need many nights. Green = better than your normal, red = worse.");
     const summaryGroup = group("Summary");
+    const ctx = { days, workouts: allWorkouts, log: this.log, journal: this.journal, today: localToday() };
     // charts are sized from their container, so draw only once every card is in the grid
     this.pendingDraws = [];
     const blue = css("--series-1");
@@ -673,9 +697,15 @@ export class HealthView {
     this.trainingTimeCard(trainingGroup, workouts, start, end, gaps);
     this.zonesCard(trainingGroup, workouts);
     this.workoutsCard(trainingGroup, workouts);
+    if (this.log?.sessions.length) readinessStrengthCard(this, trainingGroup, ctx);
     this.sessionsCard(sessionGroup, start);
+    journalCard(this, insightGroup, ctx);
+    lateWorkoutCard(this, insightGroup, ctx);
+    trainingAfterCard(this, insightGroup, ctx);
+    if (days.some((d) => d.bedtime)) sleepGateCard(this, insightGroup, ctx);
+    supplementCard(this, insightGroup, ctx);
     this.periodCard(summaryGroup, cur, workouts);
-    this.journalCard(summaryGroup, cur);
+    feelingCard(this, summaryGroup, ctx);
     root.querySelectorAll(".card-group").forEach((g) => g.querySelector(".cards").childElementCount || g.remove());
     this.pendingDraws.forEach((draw) => draw());
   }
@@ -722,57 +752,6 @@ export class HealthView {
       { label: "Strain", get: (g) => fixed(avg(g, (d) => d.strain), 1), num: true },
       { label: "Workouts", get: (g) => g.workouts, num: true },
     ], rows);
-  }
-
-  /**
-   * Journal answers against that night's HRV relative to your normal (hrvDev, see annotateHrv) instead of
-   * WHOOP recovery: it exists for WHOOP and Polar nights, and the per-device baseline removes the device offset.
-   */
-  journalCard(cards, cur) {
-    const questions = new Map();
-    for (const d of cur) {
-      if (d.hrvDev == null) continue;
-      for (const [q, yes] of Object.entries(d.journal)) {
-        if (!questions.has(q)) questions.set(q, { yes: [], no: [] });
-        questions.get(q)[yes ? "yes" : "no"].push(d.hrvDev);
-      }
-    }
-    // means of log differences, shown as % above / below normal
-    const pctOf = (logDiff) => (Math.exp(logDiff) - 1) * 100;
-    const rows = [...questions]
-      .filter(([, v]) => v.yes.length >= 5 && v.no.length >= 5)
-      .map(([q, v]) => ({ q, nYes: v.yes.length, nNo: v.no.length, yes: pctOf(mean(v.yes)), no: pctOf(mean(v.no)), diff: pctOf(mean(v.yes) - mean(v.no)) }))
-      .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
-
-    const card = this.card(cards, "Journal vs. HRV",
-      "HRV on nights after answering yes vs. no, in % from your 60-day normal (at least 5 of each)", null, null, null);
-    const body = card.querySelector(".card-body");
-    if (!rows.length) {
-      body.textContent = "Not enough journal answers in this period.";
-      return;
-    }
-    const signed = (v) => { const n = Math.round(v); return `${n > 0 ? "+" : n < 0 ? "−" : "±"}${Math.abs(n)}%`; };
-    dataTable(body, [
-      { label: "Question", get: (r) => r.q },
-      { label: "Yes", get: (r) => `${signed(r.yes)} (${r.nYes})`, num: true },
-      { label: "No", get: (r) => `${signed(r.no)} (${r.nNo})`, num: true },
-      {
-        label: "Difference",
-        get: (r) => {
-          const n = Math.round(r.diff);
-          return n === 0 ? "± 0%" : `${n > 0 ? "▲ +" : "▼ −"}${Math.abs(n)}%`;
-        },
-        num: true,
-      },
-    ], rows);
-    body.querySelectorAll("tbody tr").forEach((tr, i) => {
-      const n = Math.round(rows[i].diff);
-      if (n !== 0) tr.lastElementChild.classList.add(n > 0 ? "good" : "bad");
-    });
-    const note = document.createElement("p");
-    note.className = "card-note";
-    note.textContent = "Associations, not causes: e.g. caffeine days may also be short-sleep days. Single nights vary a lot, so differences of a few % are noise.";
-    body.appendChild(note);
   }
 
   /** Training time per week, stacked by workout category. */
@@ -908,7 +887,7 @@ export class HealthView {
     note.className = "card-note";
     note.textContent = "Sitting still lowers heart rate by itself, so meditation without stimulation is the fair comparison. "
       + "At rest the Loop measures every 5 minutes; start a workout on the Loop during a session for second-by-second heart rate. "
-      + "The night after is in Journal vs. HRV (\"… the day before?\").";
+      + "The night after is in Journal vs. recovery (\"… the day before?\").";
     card.appendChild(note);
   }
 

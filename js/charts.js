@@ -424,7 +424,7 @@ export function hBars(container, rows, opts) {
   }
 }
 
-/** Table twin of a chart: columns [{ label, get(row), num? }]. */
+/** Table twin of a chart: columns [{ label, get(row), num? }]; get may return { text, cls } to color a cell. */
 export function dataTable(container, columns, rows) {
   container.replaceChildren();
   const table = document.createElement("table");
@@ -441,8 +441,11 @@ export function dataTable(container, columns, rows) {
     const tr = body.insertRow();
     for (const c of columns) {
       const td = tr.insertCell();
-      td.textContent = c.get(r) ?? "–";
-      if (c.num) td.className = "num";
+      const v = c.get(r);
+      const cell = v != null && typeof v === "object" ? v : { text: v };
+      td.textContent = cell.text ?? "–";
+      if (c.num) td.classList.add("num");
+      if (cell.cls) td.classList.add(cell.cls);
     }
   }
   container.appendChild(table);
