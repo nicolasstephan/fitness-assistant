@@ -5,7 +5,7 @@
 //   (tracker workouts without a sport, e.g. old Loop detections "Other indoor", are not listed: automatic
 //   detection is off and the activity is never inferred)
 // joinLog() is shared with the Health view, which lists manual workouts and activities with their tracker data.
-import { normalizeLog, newId, localNow, activeActivity } from "./training-log.js";
+import { normalizeLog, newId, localNow, activeActivities } from "./training-log.js";
 import { trackerEnd } from "./workouts.js";
 import { SPORTS, sportById, sportOfTracker } from "./data/sports.js";
 
@@ -106,6 +106,11 @@ export function combineActivities(log, trackerWorkouts) {
 
 const readStarted = () => { try { return JSON.parse(localStorage.getItem(STARTED_KEY)) ?? {}; } catch { return {}; } };
 const writeStarted = (v) => { try { localStorage.setItem(STARTED_KEY, JSON.stringify(v)); } catch {} };
+const forgetStarted = (ids) => {
+  const v = readStarted();
+  for (const id of ids) delete v[id];
+  writeStarted(v);
+};
 
 export class ActivityView {
   /**
@@ -122,7 +127,7 @@ export class ActivityView {
   }
 
   onClick(e) {
-    const t = e.target.closest("[data-log-activity],[data-start-pick],[data-start-sport],[data-stop-activity],[data-cancel-activity],[data-delete-activity],[data-show-activity]");
+    const t = e.target.closest("[data-log-activity],[data-start-pick],[data-start-sport],[data-stop-activity],[data-stop-all],[data-cancel-activity],[data-edit-activity],[data-delete-activity],[data-show-activity]");
     if (!t) return;
     const log = this.getLog();
     if (t.dataset.logActivity !== undefined) return this.openDialog();
@@ -132,17 +137,23 @@ export class ActivityView {
       return;
     }
     if (t.dataset.startSport) {
-      if (activeActivity(log)) return;
+      // several can run at once (TENS + meditation), but not the same activity twice
+      if (activeActivities(log).some((x) => x.sport === t.dataset.startSport)) return;
       const a = { id: newId(), sport: t.dataset.startSport, start: localNow(), end: null };
-      writeStarted({ [a.id]: Date.now() });
+      writeStarted({ ...readStarted(), [a.id]: Date.now() });
       this.root.querySelector("#activity-start-pick").hidden = true;
       return this.saveLog(normalizeLog({ ...log, activities: [...log.activities, a] }));
     }
-    if (t.dataset.stopActivity) return this.stop(log, t.dataset.stopActivity);
+    if (t.dataset.stopActivity) return this.stop(log, [t.dataset.stopActivity]);
+    if (t.dataset.stopAll !== undefined) return this.stop(log, activeActivities(log).map((x) => x.id));
     if (t.dataset.cancelActivity) {
       if (!confirm("Discard this recording?")) return;
-      writeStarted({});
+      forgetStarted([t.dataset.cancelActivity]);
       return this.saveLog(normalizeLog({ ...log, activities: log.activities.filter((x) => x.id !== t.dataset.cancelActivity) }));
+    }
+    if (t.dataset.editActivity) {
+      const a = log.activities.find((x) => x.id === t.dataset.editActivity);
+      return a && this.openDialog(a);
     }
     if (t.dataset.deleteActivity) {
       const a = log.activities.find((x) => x.id === t.dataset.deleteActivity);
@@ -157,15 +168,21 @@ export class ActivityView {
     }
   }
 
-  stop(log, id) {
-    const a = log.activities.find((x) => x.id === id);
-    if (!a) return;
-    // at least one minute (the log keeps minutes); exact start from this device if it recorded it
-    const startMs = readStarted()[id] ?? toMs(a.start);
-    const minutes = Math.max(1, Math.round((Date.now() - startMs) / MIN));
-    writeStarted({});
-    const done = { ...a, end: toLocal(toMs(a.start) + minutes * MIN) };
-    this.saveLog(normalizeLog({ ...log, activities: log.activities.map((x) => (x.id === id ? done : x)) }));
+  /** Stop the given recordings (one, or all at once) in a single save. */
+  stop(log, ids) {
+    const started = readStarted();
+    const done = new Map();
+    for (const id of ids) {
+      const a = log.activities.find((x) => x.id === id && !x.end);
+      if (!a) continue;
+      // at least one minute (the log keeps minutes); exact start from this device if it recorded it
+      const startMs = started[id] ?? new Date(a.start).getTime(); // no offset: parsed as local time (toMs is wall-clock "UTC")
+      const minutes = Math.max(1, Math.round((Date.now() - startMs) / MIN));
+      done.set(id, { ...a, end: toLocal(toMs(a.start) + minutes * MIN) });
+    }
+    if (!done.size) return;
+    forgetStarted([...done.keys()]);
+    this.saveLog(normalizeLog({ ...log, activities: log.activities.map((x) => done.get(x.id) ?? x) }));
   }
 
   /** Highlight a row's sport on the model (null clears; also called by the app when another selection takes over). */
@@ -180,57 +197,102 @@ export class ActivityView {
 
   // ---------- log dialog
 
+  /** Start and end from the dialog's fields; an end before the start means the next day (overnight). */
+  dialogTimes() {
+    const v = (name) => this.dialog.querySelector(`[name=${name}]`).value;
+    if (!v("date") || !v("time")) return null;
+    const start = `${v("date")}T${v("time")}`;
+    if (this.editing && !this.editing.end) return { start, end: null }; // still recording: only the start
+    if (!v("endTime")) return null;
+    let endMs = toMs(`${v("date")}T${v("endTime")}`);
+    if (endMs <= toMs(start)) endMs += DAY;
+    return { start, end: toLocal(endMs) };
+  }
+
   setupDialog() {
     const d = this.dialog;
     d.querySelector("[name=sport]").replaceChildren(...SPORTS.map((s) => el("option", { value: s.id, textContent: s.name })));
     d.querySelector("#activity-cancel").addEventListener("click", () => d.close());
+    const showDuration = () => {
+      const t = this.dialogTimes();
+      d.querySelector("#activity-duration").textContent = t?.end ? `Duration: ${fmtDuration((toMs(t.end) - toMs(t.start)) / MIN)}` : "";
+    };
+    d.querySelector("form").addEventListener("input", showDuration);
     d.querySelector("form").addEventListener("submit", (e) => {
       e.preventDefault();
-      const v = (name) => d.querySelector(`[name=${name}]`).value;
-      const minutes = Math.round(Number(v("minutes")));
-      if (!v("date") || !v("time") || !(minutes > 0)) {
-        d.querySelector("#activity-error").textContent = "Enter date, start time and duration.";
+      const times = this.dialogTimes();
+      if (!times) {
+        d.querySelector("#activity-error").textContent = "Enter date, start and end time.";
         return;
       }
-      const start = `${v("date")}T${v("time")}`;
       const log = this.getLog();
-      const a = { id: newId(), sport: v("sport"), start, end: toLocal(toMs(start) + minutes * MIN) };
-      this.saveLog(normalizeLog({ ...log, activities: [...log.activities, a] }));
+      const sport = d.querySelector("[name=sport]").value;
+      const old = this.editing;
+      if (old) {
+        if (!old.end && toMs(times.start) > toMs(localNow())) {
+          d.querySelector("#activity-error").textContent = "The start can't be in the future.";
+          return;
+        }
+        forgetStarted([old.id]); // the edited start replaces this device's exact start
+        const a = { ...old, sport, ...times };
+        this.saveLog(normalizeLog({ ...log, activities: log.activities.map((x) => (x.id === old.id ? a : x)) }));
+      } else {
+        this.saveLog(normalizeLog({ ...log, activities: [...log.activities, { id: newId(), sport, ...times }] }));
+      }
       d.close();
     });
+    this.showDuration = showDuration;
   }
 
-  openDialog() {
+  /** New entry (an hour, just finished) or, with an activity, edit its sport and times. */
+  openDialog(activity = null) {
     const d = this.dialog;
-    const now = localNow();
-    const start = toLocal(toMs(now) - 60 * MIN); // default: an hour, just finished
+    this.editing = activity;
+    const running = activity && !activity.end;
+    const start = activity?.start ?? toLocal(toMs(localNow()) - 60 * MIN);
+    const end = activity?.end ?? localNow();
+    d.querySelector("#activity-dialog-title").textContent = activity ? (running ? "Edit start" : "Edit activity") : "Log activity";
+    d.querySelector("[name=sport]").value = activity?.sport ?? d.querySelector("[name=sport]").value;
     d.querySelector("[name=date]").value = start.slice(0, 10);
     d.querySelector("[name=time]").value = start.slice(11);
-    d.querySelector("[name=minutes]").value = 60;
+    const endField = d.querySelector("[name=endTime]");
+    endField.value = end.slice(11);
+    endField.required = !running;
+    endField.closest("label").hidden = running;
     d.querySelector("#activity-error").textContent = "";
+    this.showDuration();
     d.showModal();
   }
 
   // ---------- rendering
 
+  /** One block per running recording (several can run together); "Stop all" when more than one runs. */
   renderRunning(running) {
     const bar = this.root.querySelector("#activity-running");
     clearInterval(this.timer);
-    bar.hidden = !running;
-    this.root.querySelector("[data-start-pick]").disabled = !!running;
-    if (!running) return bar.replaceChildren();
-    const elapsed = el("strong", { className: "activity-elapsed" });
+    bar.hidden = !running.length;
+    if (!running.length) return bar.replaceChildren();
+    const started = readStarted();
+    const clocks = running.map((a) => ({
+      el: el("strong", { className: "activity-elapsed" }),
+      startMs: started[a.id] ?? new Date(a.start).getTime(), // no offset: parsed as local time
+    }));
     bar.replaceChildren(
-      el("div", { className: "workout-head" },
-        el("span", { className: "workout-live", textContent: `${nameOf(running.sport)} · since ${running.start.slice(11)}` }),
-        elapsed),
-      el("div", { className: "workout-actions" },
-        el("button", { type: "button", className: "primary-btn", dataset: { stopActivity: running.id }, textContent: "■ Stop" }),
-        el("button", { type: "button", className: "ghost small", dataset: { cancelActivity: running.id }, textContent: "Discard" })));
-    const startMs = readStarted()[running.id] ?? new Date(running.start).getTime(); // no offset: parsed as local time
+      ...running.map((a, i) => el("div", { className: "activity-run" },
+        el("div", { className: "workout-head" },
+          el("span", { className: "workout-live", textContent: `${nameOf(a.sport)} · since ${a.start.slice(11)}` }),
+          clocks[i].el),
+        el("div", { className: "workout-actions" },
+          el("button", { type: "button", className: "primary-btn", dataset: { stopActivity: a.id }, textContent: "■ Stop" }),
+          el("button", { type: "button", className: "ghost small", dataset: { editActivity: a.id }, textContent: "Edit start" }),
+          el("button", { type: "button", className: "ghost small", dataset: { cancelActivity: a.id }, textContent: "Discard" })))),
+      ...(running.length > 1 ? [el("div", { className: "workout-actions" },
+        el("button", { type: "button", className: "primary-btn", dataset: { stopAll: "" }, textContent: "■ Stop all" }))] : []));
     const tick = () => {
-      const s = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
-      elapsed.textContent = `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+      for (const c of clocks) {
+        const s = Math.max(0, Math.floor((Date.now() - c.startMs) / 1000));
+        c.el.textContent = `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+      }
     };
     tick();
     this.timer = setInterval(tick, 1000);
@@ -242,9 +304,12 @@ export class ActivityView {
     const { activities } = combineActivities(log, tracker?.workouts);
     this.rows = new Map();
 
-    this.renderRunning(activeActivity(log));
+    const running = activeActivities(log);
+    this.renderRunning(running);
+    // the pick stays open for a second activity; one already running can't start again
     this.root.querySelector("#activity-start-pick").replaceChildren(...SPORTS.map((s) =>
-      el("button", { type: "button", className: "ghost small", dataset: { startSport: s.id }, textContent: s.name })));
+      el("button", { type: "button", className: "ghost small", dataset: { startSport: s.id }, textContent: s.name,
+        disabled: running.some((a) => a.sport === s.id) })));
 
     // last 30 days per activity
     const since = toMs(localNow()) - SUMMARY_DAYS * DAY;
@@ -280,7 +345,9 @@ export class ActivityView {
       return el("li", { className: [id === this.selected ? "active" : "", rest ? "rest" : ""].join(" ").trim(), dataset: { showActivity: id },
         title: rest ? "" : "Show the muscles this trains" },
         text,
-        ...(a.auto ? [] : [el("button", { type: "button", className: "icon-btn", dataset: { deleteActivity: a.id }, ariaLabel: "Delete activity", textContent: "×" })]));
+        ...(a.auto ? [] : [
+          el("button", { type: "button", className: "icon-btn", dataset: { editActivity: a.id }, ariaLabel: "Edit activity", title: "Edit times", textContent: "✎" }),
+          el("button", { type: "button", className: "icon-btn", dataset: { deleteActivity: a.id }, ariaLabel: "Delete activity", textContent: "×" })]));
     }));
     const history = this.root.querySelector("#activity-history");
     history.hidden = !activities.length;

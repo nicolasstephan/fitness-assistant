@@ -276,11 +276,12 @@
 
   <dialog id="activity-dialog">
     <form>
-      <h2>Log activity</h2>
+      <h2 id="activity-dialog-title">Log activity</h2>
       <label>Activity<select name="sport"></select></label>
       <label>Date<input name="date" type="date" required></label>
       <label>Start<input name="time" type="time" required></label>
-      <label>Duration (min)<input name="minutes" type="number" min="1" step="1" inputmode="numeric" maxlength="4" required></label>
+      <label>End<input name="endTime" type="time" required></label>
+      <p id="activity-duration" class="hint"></p>
       <p class="hint">If your tracker recorded it, its heart rate and calories are added by the time.</p>
       <p id="activity-error" class="sync-error" role="status"></p>
       <div class="dialog-actions">

@@ -430,6 +430,7 @@ dialog select { padding: 8px 6px; border: 1px solid var(--border); border-radius
 .activities .chips { margin-top: 6px; }
 .activities .start-pick { margin: 4px 0 10px; }
 .activities .workout-bar { margin: 4px 0 10px; }
+.activities .activity-run + .activity-run, .activities .activity-run + .workout-actions { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .activities .list li.rest { cursor: default; }
 .activities .fold { margin-top: 10px; }
 /* tapped plan: progress per exercise (total reps, heaviest weight) */

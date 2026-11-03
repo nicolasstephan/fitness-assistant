@@ -97,7 +97,8 @@ export function localNow() {
 }
 
 export const activeWorkout = (log) => log.workouts.find((w) => !w.end) ?? null;
-export const activeActivity = (log) => log.activities.find((a) => !a.end) ?? null;
+/** Activities being recorded right now (several can run at once, e.g. vagus nerve stimulation + meditation). */
+export const activeActivities = (log) => log.activities.filter((a) => !a.end);
 
 export const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
