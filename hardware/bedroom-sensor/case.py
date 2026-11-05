@@ -29,11 +29,13 @@ LID_T, LIP_H, LIP_W = 2.0, 3.0, 1.4
 
 # boards (w = along x, h = height / length, t = PCB thickness)
 SCD_W, SCD_H, SCD_T = 24.0, 21.0, 1.6      # Pimoroni SCD41, stands upright, sensor facing the front vents
-XIAO_W, XIAO_L, XIAO_X = 17.5, 21.0, -8.0  # XIAO ESP32C3 lying flat, USB-C to the back wall
-USB_W, USB_H, USB_Z = 13.0, 8.0, 2.6       # opening for the USB-C plug (Z above the divider top)
+XIAO_W, XIAO_L, XIAO_X = 17.8, 21.0, -8.0  # XIAO ESP32C3 (Seeed: 21 x 17.8 mm) lying flat, USB-C to the back wall
+XIAO_T = 1.2                                # XIAO PCB thickness
+USB_W, USB_H, USB_Z = 13.0, 8.0, 2.8       # opening for the USB-C plug (Z = its centre above the divider top)
 MIC_W, MIC_H, MIC_X = 16.5, 12.7, 9.0      # Adafruit SPH0645, flat against the front wall
 MIC_HOLE_W, MIC_HOLE_H = 2.5, 6.0          # sound slot through the front wall at the board's centre
 BH_W, BH_D = 18.5, 13.9                    # GY-302 (BH1750) under the lid
+BH_GAP = 1.5                                # board sits this far below the lid (room for its top-side parts)
 WINDOW_D = 7.0                              # light window in the lid
 
 TOL = 0.01
@@ -154,10 +156,105 @@ def make_lid():
                [rprism(lw - 2 * LIP_W, ld - 2 * LIP_W, 0.8, -LIP_H - 1, 0.5)])
     # BH1750 pocket under the window (board pressed in, or a dab of hot glue)
     bw, bd = BH_W / 2 + FIT, BH_D / 2 + FIT
-    frame = diff(box(-bw - 1.2, bw + 1.2, -bd - 1.2, bd + 1.2, -2.0, 0.01),
-                 [box(-bw, bw, -bd, bd, -3, 0.5)])
-    lid = union([plate, lip, frame])
+    depth = BH_GAP + 1.6 + 0.6
+    frame = diff(box(-bw - 1.2, bw + 1.2, -bd - 1.2, bd + 1.2, -depth, 0.01),
+                 [box(-bw, bw, -bd, bd, -depth - 1, 0.5)])
+    # two ribs at the short ends: the board rests on its edges, BH_GAP below the lid
+    ribs = [box(s * (bw + 0.6), s * (bw - 1.0), -bd - 0.6, bd + 0.6, -BH_GAP, 0.5) for s in (-1, 1)]
+    lid = union([plate, lip, frame] + ribs)
     return diff(lid, [cyl(0, 0, -1, LID_T + 1, WINDOW_D)])
+
+# ---------------------------------------------------------------- components (not printed; for checking the fit)
+# Modelled from data sheets where no public 3D model exists (positions of small parts are approximate).
+# The mic is Adafruit's own STEP (models/), imported and placed by import_step().
+MODELS = os.path.join(HERE, "models")
+MIC_STEP = os.path.join(MODELS, "adafruit-6049-i2s-mems-mic.step")  # same board size as the SPH0645 (3421)
+
+def holes(b, pts, d, axis):
+    """Drill small through-holes (solder holes, castellations) into board b."""
+    cut = []
+    for (x, y, z) in pts:
+        if axis == "y":
+            pl = G.Plane(G.Point3d(x, y - 5, z), G.Vector3d.YAxis)
+        else:
+            pl = G.Plane(G.Point3d(x, y, z - 5), G.Vector3d.ZAxis)
+        cut.append(G.Cylinder(G.Circle(pl, d / 2), 10).ToBrep(True, True))
+    return diff(b, cut, "holes")
+
+def make_xiao():
+    """Seeed XIAO ESP32C3 lying flat in its pocket, USB-C at the back edge (overhangs ~1 mm)."""
+    z0, xb, x = DIV_TOP, IY - 1.5, XIAO_X
+    zt = z0 + XIAO_T
+    pcb = box(x - XIAO_W / 2, x + XIAO_W / 2, xb - XIAO_L, xb, z0, zt)
+    pads = [(x + s * XIAO_W / 2, xb - 2.9 - i * 2.54, z0) for s in (-1, 1) for i in range(7)]  # castellations
+    pcb = holes(pcb, pads, 1.0, "z")
+    usb_c = USB_Z - XIAO_T
+    return [
+        ("XIAO PCB", pcb, (20, 20, 20)),
+        ("XIAO USB-C", box(x - 4.47, x + 4.47, xb - 7.35 + 1.0, xb + 1.0, zt, zt + 2 * usb_c), (190, 190, 190)),
+        ("XIAO ESP32-C3 chip", box(x - 2.5, x + 2.5, xb - 15.5, xb - 10.5, zt, zt + 0.85), (60, 60, 60)),
+        ("XIAO U.FL antenna socket", box(x + XIAO_W / 2 - 4.0, x + XIAO_W / 2 - 1.4, xb - XIAO_L + 1.2, xb - XIAO_L + 3.8, zt, zt + 1.25), (210, 180, 90)),
+        ("XIAO BOOT button", box(x - 7.6, x - 5.2, xb - 6.0, xb - 3.0, zt, zt + 1.0), (230, 230, 230)),
+        ("XIAO RESET button", box(x + 5.2, x + 7.6, xb - 6.0, xb - 3.0, zt, zt + 1.0), (230, 230, 230)),
+    ]
+
+def make_scd41():
+    """Pimoroni SCD41 breakout standing in the posts; sensor faces the front vents (-y)."""
+    z0, t = FLOOR, SCD_T
+    pcb = box(-SCD_W / 2, SCD_W / 2, -t / 2, t / 2, z0, z0 + SCD_H)
+    pcb = holes(pcb, [(-5.08 + i * 2.54, 0, z0 + SCD_H - 1.6) for i in range(5)], 1.0, "y")   # 5-pin header row
+    zc = z0 + SCD_H / 2 - 1.0
+    return [
+        ("SCD41 PCB", pcb, (20, 20, 20)),
+        ("SCD41 sensor (Sensirion, 10.1 x 10.1 x 6.5)", box(-5.05, 5.05, -t / 2 - 6.5, -t / 2, zc - 5.05, zc + 5.05), (215, 215, 215)),
+        ("SCD41 Qwiic connector (approx.)", box(-2.1, 2.1, t / 2, t / 2 + 2.9, z0 + 0.6, z0 + 3.6), (240, 240, 240)),
+    ]
+
+def make_bh1750(lid_z):
+    """GY-302 (BH1750) on the lid's ribs, sensor chip under the window."""
+    zt = lid_z - BH_GAP
+    pcb = box(-BH_W / 2, BH_W / 2, -BH_D / 2, BH_D / 2, zt - 1.6, zt)
+    pcb = holes(pcb, [(-BH_W / 2 + 2.5, 0, zt)], 3.0, "z")                                   # mounting hole
+    pcb = holes(pcb, [(BH_W / 2 - 1.6, -5.08 + i * 2.54, zt) for i in range(5)], 1.0, "z")    # header row
+    return [
+        ("BH1750 PCB", pcb, (30, 60, 150)),
+        ("BH1750 chip", box(-1.5, 1.5, -0.8, 0.8, zt, zt + 0.7), (40, 40, 40)),
+        ("BH1750 regulator (approx.)", box(2.5, 5.4, 2.0, 3.6, zt, zt + 1.1), (40, 40, 40)),
+    ]
+
+def import_step(doc, path, lay):
+    """Import a STEP file, move all its objects to a layer, return their ids."""
+    before = set(o.Id for o in doc.Objects)
+    if not os.path.exists(path) or not doc.Import(path):
+        log("WARNING: could not import " + path)
+        return []
+    ids = [o.Id for o in doc.Objects if o.Id not in before]
+    for i in ids:
+        o = doc.Objects.FindId(i); o.Attributes.LayerIndex = lay; o.CommitChanges()
+    return ids
+
+def bbox_of(doc, ids):
+    bb = G.BoundingBox.Empty
+    for i in ids:
+        bb.Union(doc.Objects.FindId(i).Geometry.GetBoundingBox(True))
+    return bb
+
+def place_mic(doc, ids):
+    """Stand the imported mic board flat against the inside of the front wall, centred on the sound slot."""
+    if not ids: return
+    bb = bbox_of(doc, ids); d = bb.Diagonal
+    log("mic STEP as imported: %d objects, %.1f x %.1f x %.1f mm" % (len(ids), d.X, d.Y, d.Z))
+    xf = G.Transform.Identity
+    if d.Z <= min(d.X, d.Y):                     # board lies in XY (usual): stand it up into XZ
+        xf = G.Transform.Rotation(math.radians(90), G.Vector3d.XAxis, bb.Center)
+    elif d.X <= min(d.Y, d.Z):                    # thinnest along X: turn about Z
+        xf = G.Transform.Rotation(math.radians(90), G.Vector3d.ZAxis, bb.Center)
+    for i in ids: doc.Objects.Transform(i, xf, True)
+    bb = bbox_of(doc, ids)
+    mv = G.Transform.Translation(MIC_X - bb.Center.X, -IY - bb.Min.Y, DIV_TOP - bb.Min.Z)
+    for i in ids: doc.Objects.Transform(i, mv, True)
+    d = bbox_of(doc, ids).Diagonal
+    log("mic placed: %.1f x %.1f x %.1f mm (x, y, z)" % (d.X, d.Y, d.Z))
 
 # ---------------------------------------------------------------- output
 def write_stl(brep, path):
@@ -212,21 +309,23 @@ def main():
 
     # 3dm: parts assembled (lid and divider in place) plus an exploded copy with dummy boards
     lp = layer(doc, "Print parts", SD.Color.FromArgb(200, 200, 200))
-    ld = layer(doc, "Dummy boards (not printed)", SD.Color.FromArgb(40, 140, 90))
     add(doc, shell, lp, "shell")
     add(doc, moved(divider, z=DIV_Z), lp, "divider")
-    add(doc, moved(lid, z=SHELL_H + 18), lp, "lid (lifted)")
-    xb = IY - 1.5
-    dummies = [
-        ("SCD41", box(-SCD_W / 2, SCD_W / 2, -SCD_T / 2, SCD_T / 2, FLOOR, FLOOR + SCD_H)),
-        ("SCD41 sensor", box(-5, 5, -SCD_T / 2 - 6.5, -SCD_T / 2, FLOOR + 5, FLOOR + 15)),
-        ("XIAO ESP32C3", box(XIAO_X - XIAO_W / 2, XIAO_X + XIAO_W / 2, xb - XIAO_L, xb, DIV_TOP, DIV_TOP + 1.0)),
-        ("USB-C", box(XIAO_X - 4.5, XIAO_X + 4.5, xb - 7, xb + 1, DIV_TOP + 1.0, DIV_TOP + 4.2)),
-        ("SPH0645 mic", box(MIC_X - MIC_W / 2, MIC_X + MIC_W / 2, -IY, -IY + SCD_T, DIV_TOP, DIV_TOP + MIC_H)),
-        ("BH1750", box(-BH_W / 2, BH_W / 2, -BH_D / 2, BH_D / 2, SHELL_H + 18 - 1.6, SHELL_H + 18)),
-    ]
-    for n, b in dummies:
-        add(doc, b, ld, n)
+    lid_z = SHELL_H + 18
+    add(doc, moved(lid, z=lid_z), lp, "lid (lifted)")
+    # components: one sub-layer per board, colours per part
+    root = layer(doc, "Components (not printed)", SD.Color.FromArgb(40, 140, 90))
+    def sub(name):
+        L = Rhino.DocObjects.Layer(); L.Name = name; L.ParentLayerId = doc.Layers[root].Id
+        L.Color = SD.Color.FromArgb(40, 140, 90)
+        return doc.Layers.Add(L)
+    for lname, parts in (("XIAO ESP32C3", make_xiao()), ("SCD41 (Pimoroni)", make_scd41()), ("BH1750 (GY-302)", make_bh1750(lid_z))):
+        li = sub(lname)
+        for n, b, rgb in parts:
+            a = Rhino.DocObjects.ObjectAttributes(); a.LayerIndex = li; a.Name = n
+            a.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject; a.ObjectColor = SD.Color.FromArgb(*rgb)
+            doc.Objects.AddBrep(b, a)
+    place_mic(doc, import_step(doc, MIC_STEP, sub("I2S microphone (Adafruit STEP)")))
     doc.Views.Redraw()
 
     try:
