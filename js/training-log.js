@@ -4,7 +4,8 @@
 //   sessions: [{ id, date, exercise, sets: [{ reps, kg, i? }], workoutId?, time? }]   one per exercise
 //             (i = index of the planned set it ticks off)
 //   activities: [{ id, sport, start, end, tracker? }]   other activities (data/sports.js); tracker = key of the tracker
-//             workout it was labeled from ("polar:YYYY-MM-DDTHH:MM", see trackerKey); end null while recording
+//             workout it was labeled from ("polar:YYYY-MM-DDTHH:MM", see trackerKey); end null while recording;
+//             autoStopMin = stops by itself that many minutes after the start (running only)
 //   ignored:  [trackerKey]   tracker workouts marked "none of these" in the activity list
 import { lineChart } from "./charts.js";
 
@@ -42,6 +43,9 @@ function normalizeActivity(a) {
   if (!running && (!LOCAL_TIME_RE.test(a.end) || a.end <= a.start)) return null;
   const out = { id: a.id, sport: a.sport, start: a.start, end: running ? null : a.end };
   if (typeof a.tracker === "string") out.tracker = a.tracker;
+  // planned length of a recording: it stops by itself after this many minutes (kept only while it runs)
+  const auto = Math.round(Number(a.autoStopMin));
+  if (running && auto >= 1 && auto <= 24 * 60) out.autoStopMin = auto;
   return out;
 }
 

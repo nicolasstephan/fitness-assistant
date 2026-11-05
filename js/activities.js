@@ -15,6 +15,8 @@ const TOLERANCE = 15 * MIN;
 const SUMMARY_DAYS = 30;
 const LIST_LENGTH = 20;
 const STARTED_KEY = "fa.activityStartedAt"; // { id: ms } exact start of a recording (the log keeps minutes)
+const AUTO_KEY = "fa.activityAutoStop"; // { sport: minutes } last auto-stop chosen per activity on this device (0 = off)
+const AUTO_CHOICES = [0, 10, 15, 20, 30, 45, 60, 90, 120];
 
 const toMs = (local) => Date.parse(`${local}:00Z`); // local wall-clock times, compared consistently as "UTC"
 const toLocal = (ms) => new Date(ms).toISOString().slice(0, 16);
@@ -111,18 +113,50 @@ const forgetStarted = (ids) => {
   for (const id of ids) delete v[id];
   writeStarted(v);
 };
+const readAuto = () => { try { return JSON.parse(localStorage.getItem(AUTO_KEY)) ?? {}; } catch { return {}; } };
+const rememberAuto = (sport, min) => { try { localStorage.setItem(AUTO_KEY, JSON.stringify({ ...readAuto(), [sport]: min })); } catch {} };
+/** Auto-stop for a new recording: the last one chosen for this activity, else the activity's default. */
+const autoStopFor = (sport) => readAuto()[sport] ?? sportById.get(sport)?.autoStopMin ?? 0;
+/** Exact start of a running recording: this device's if it recorded it, else the log's minute. */
+const startMsOf = (a, started = readStarted()) => started[a.id] ?? new Date(a.start).getTime(); // no offset: parsed as local time
+/** Planned end (ms) of a recording with auto-stop, or null. */
+const autoStopMs = (a, started) => (a.autoStopMin ? startMsOf(a, started) + a.autoStopMin * MIN : null);
+const fmtClock = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const fmtElapsed = (s) => `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+/**
+ * Stop the recordings whose auto-stop time has passed, at exactly that time (also when the app was closed then).
+ * Returns the new log, or null when nothing is due.
+ */
+export function applyAutoStops(log, now = Date.now()) {
+  const started = readStarted();
+  const done = new Map();
+  for (const a of activeActivities(log)) {
+    const due = autoStopMs(a, started);
+    if (due != null && now >= due) done.set(a.id, { ...a, end: toLocal(toMs(a.start) + a.autoStopMin * MIN) });
+  }
+  if (!done.size) return null;
+  forgetStarted([...done.keys()]);
+  return normalizeLog({ ...log, activities: log.activities.map((x) => done.get(x.id) ?? x) });
+}
 
 export class ActivityView {
   /**
    * root: the #activities section; dialog: the "log activity" <dialog>. getLog/saveLog: the training log doc.
    * getTracker(): { source, workouts } or null. onShowSport({ id, sport, title } | null): show a sport's muscles.
    * describeSession(activity): optional one-line heart-rate summary of a resting session (or null).
+   * banner: optional app-wide bar listing the running recordings (shown in every section); onOpen(): go to them.
    */
-  constructor(root, dialog, { getLog, saveLog, getTracker, onShowSport, describeSession }) {
-    Object.assign(this, { root, dialog, getLog, saveLog, getTracker, onShowSport, describeSession });
+  constructor(root, dialog, { getLog, saveLog, getTracker, onShowSport, describeSession, banner, onOpen }) {
+    Object.assign(this, { root, dialog, getLog, saveLog, getTracker, onShowSport, describeSession, banner, onOpen });
     this.selected = null; // id of the row whose muscles are shown
     this.timer = null;
     root.addEventListener("click", (e) => this.onClick(e));
+    root.addEventListener("change", (e) => this.onChange(e));
+    banner?.addEventListener("click", (e) => {
+      if (e.target.closest("[data-open-activities]")) return this.onOpen?.();
+      this.onClick(e);
+    });
     this.setupDialog();
   }
 
@@ -139,7 +173,8 @@ export class ActivityView {
     if (t.dataset.startSport) {
       // several can run at once (TENS + meditation), but not the same activity twice
       if (activeActivities(log).some((x) => x.sport === t.dataset.startSport)) return;
-      const a = { id: newId(), sport: t.dataset.startSport, start: localNow(), end: null };
+      const auto = autoStopFor(t.dataset.startSport);
+      const a = { id: newId(), sport: t.dataset.startSport, start: localNow(), end: null, ...(auto ? { autoStopMin: auto } : {}) };
       writeStarted({ ...readStarted(), [a.id]: Date.now() });
       this.root.querySelector("#activity-start-pick").hidden = true;
       return this.saveLog(normalizeLog({ ...log, activities: [...log.activities, a] }));
@@ -166,6 +201,31 @@ export class ActivityView {
       if (sportById.get(row?.sport)?.rest) return; // no muscles to show
       this.select(this.selected === t.dataset.showActivity ? null : t.dataset.showActivity, row);
     }
+  }
+
+  /** Auto-stop picker of a running recording: store it on the recording and remember it for this activity. */
+  onChange(e) {
+    const t = e.target.closest("[data-auto-stop]");
+    if (!t) return;
+    const log = this.getLog();
+    const a = log.activities.find((x) => x.id === t.dataset.autoStop && !x.end);
+    if (!a) return;
+    const min = Number(t.value);
+    rememberAuto(a.sport, min);
+    const { autoStopMin, ...rest } = a;
+    const next = min ? { ...rest, autoStopMin: min } : rest;
+    const doc = normalizeLog({ ...log, activities: log.activities.map((x) => (x.id === a.id ? next : x)) });
+    // a time already passed (e.g. 15 min chosen after 20): stops right away, at the chosen time
+    this.saveLog(applyAutoStops(doc) ?? doc);
+  }
+
+  /** Save the recordings that are due to stop by themselves; true when something stopped. */
+  checkAutoStops() {
+    const doc = applyAutoStops(this.getLog());
+    if (!doc) return false;
+    try { navigator.vibrate?.(300); } catch {}
+    this.saveLog(doc);
+    return true;
   }
 
   /** Stop the given recordings (one, or all at once) in a single save. */
@@ -266,32 +326,54 @@ export class ActivityView {
 
   // ---------- rendering
 
-  /** One block per running recording (several can run together); "Stop all" when more than one runs. */
+  /** One block per running recording (several can run together); "Stop all" when more than one runs. Also the app banner. */
   renderRunning(running) {
     const bar = this.root.querySelector("#activity-running");
     clearInterval(this.timer);
     bar.hidden = !running.length;
-    if (!running.length) return bar.replaceChildren();
+    if (this.banner) this.banner.hidden = !running.length;
+    if (!running.length) {
+      this.banner?.replaceChildren();
+      return bar.replaceChildren();
+    }
     const started = readStarted();
-    const clocks = running.map((a) => ({
-      el: el("strong", { className: "activity-elapsed" }),
-      startMs: started[a.id] ?? new Date(a.start).getTime(), // no offset: parsed as local time
-    }));
+    const clocks = running.map((a) => ({ els: [], startMs: startMsOf(a, started) }));
+    const clock = (i, className) => {
+      const e = el("strong", { className });
+      clocks[i].els.push(e);
+      return e;
+    };
+    const stopsAt = (a) => (a.autoStopMin ? ` · stops ${fmtClock(autoStopMs(a, started))}` : "");
+    const picker = (a) => {
+      const now = a.autoStopMin ?? 0;
+      const choices = AUTO_CHOICES.includes(now) ? AUTO_CHOICES : [...AUTO_CHOICES, now].sort((x, y) => x - y);
+      return el("label", { className: "auto-stop" }, "Stop after ",
+        el("select", { dataset: { autoStop: a.id }, ariaLabel: "Stop automatically after" },
+          ...choices.map((m) => el("option", { value: String(m), textContent: m ? fmtDuration(m) : "off", selected: m === now }))));
+    };
     bar.replaceChildren(
       ...running.map((a, i) => el("div", { className: "activity-run" },
         el("div", { className: "workout-head" },
-          el("span", { className: "workout-live", textContent: `${nameOf(a.sport)} · since ${a.start.slice(11)}` }),
-          clocks[i].el),
+          el("span", { className: "workout-live", textContent: `${nameOf(a.sport)} · since ${a.start.slice(11)}${stopsAt(a)}` }),
+          clock(i, "activity-elapsed")),
         el("div", { className: "workout-actions" },
+          picker(a),
           el("button", { type: "button", className: "primary-btn", dataset: { stopActivity: a.id }, textContent: "■ Stop" }),
           el("button", { type: "button", className: "ghost small", dataset: { editActivity: a.id }, textContent: "Edit start" }),
           el("button", { type: "button", className: "ghost small", dataset: { cancelActivity: a.id }, textContent: "Discard" })))),
       ...(running.length > 1 ? [el("div", { className: "workout-actions" },
         el("button", { type: "button", className: "primary-btn", dataset: { stopAll: "" }, textContent: "■ Stop all" }))] : []));
+    this.banner?.replaceChildren(
+      ...running.map((a, i) => el("div", { className: "running-item" },
+        el("button", { type: "button", className: "running-open", dataset: { openActivities: "" }, title: "Open Other activities" },
+          el("span", { className: "workout-live", textContent: `${sportById.get(a.sport)?.short ?? nameOf(a.sport)}${stopsAt(a)}` }),
+          clock(i, "running-elapsed")),
+        el("button", { type: "button", className: "ghost small", dataset: { stopActivity: a.id }, textContent: "■ Stop" }))));
     const tick = () => {
+      if (this.checkAutoStops()) return; // saving re-renders
       for (const c of clocks) {
-        const s = Math.max(0, Math.floor((Date.now() - c.startMs) / 1000));
-        c.el.textContent = `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+        const text = fmtElapsed(Math.max(0, Math.floor((Date.now() - c.startMs) / 1000)));
+        for (const e of c.els) e.textContent = text;
       }
     };
     tick();
@@ -299,6 +381,7 @@ export class ActivityView {
   }
 
   render() {
+    if (this.checkAutoStops()) return; // stopped while the app was closed: the save renders again
     const log = this.getLog();
     const tracker = this.getTracker();
     const { activities } = combineActivities(log, tracker?.workouts);

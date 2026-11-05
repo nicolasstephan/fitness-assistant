@@ -1,5 +1,6 @@
 // Other activities besides strength workouts -> muscle groups, like exercises.js.
 // tracker: activity names a tracker gives these activities (WHOOP labels, Polar sport names), lowercase.
+// autoStopMin: a recording stops by itself after this many minutes (changeable per recording; 0/absent = off).
 // rest: a resting session (no muscles, not a workout in the Health view); compared with heart rate instead.
 
 export const SPORTS = [
@@ -43,6 +44,7 @@ export const SPORTS = [
     secondary: [],
     tracker: [],
     rest: true,
+    autoStopMin: 45,
   },
   {
     id: "meditation",

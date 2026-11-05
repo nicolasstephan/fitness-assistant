@@ -432,6 +432,15 @@ dialog select { padding: 8px 6px; border: 1px solid var(--border); border-radius
 .activities .workout-bar { margin: 4px 0 10px; }
 .activities .activity-run + .activity-run, .activities .activity-run + .workout-actions { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .activities .list li.rest { cursor: default; }
+.activities .workout-actions { flex-wrap: wrap; }
+.auto-stop { margin-right: auto; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.auto-stop select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 3px 4px; }
+/* app-wide bar under the app bar while an activity records (every section) */
+.running-banner { flex: none; display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 16px; border-bottom: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.running-item { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.running-open { display: flex; align-items: baseline; gap: 8px; border: 0; background: none; padding: 4px 0; min-width: 0; text-align: left; }
+.running-open .workout-live { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.running-elapsed { font-variant-numeric: tabular-nums; }
 .activities .fold { margin-top: 10px; }
 /* tapped plan: progress per exercise (total reps, heaviest weight) */
 .plan-progress { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }

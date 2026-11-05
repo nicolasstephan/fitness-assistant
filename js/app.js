@@ -706,6 +706,13 @@ const activityView = new ActivityView($("#activities"), $("#activity-dialog"), {
   getTracker,
   // heart rate change of a resting session, once its days are loaded (the health view loads them)
   describeSession: (a) => describeHr(minuteHr.session(a)),
+  banner: $("#running-banner"),
+  // banner tapped: Exercise > Training, scrolled to Other activities
+  onOpen: () => {
+    showView("exercise");
+    selectTab("exercises");
+    $("#activities").scrollIntoView({ block: "start", behavior: "smooth" });
+  },
   onShowSport: (focus) => {
     state.sportFocus = focus;
     if (focus) {
