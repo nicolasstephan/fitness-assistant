@@ -366,17 +366,34 @@ def main():
     log("checkpoint: writing 3dm")
     # write to a temp file, then swap it in: writing straight to case.3dm stalls on a prompt when it is open in Rhino
     tmp_path, out_path = os.path.join(HERE, "case.tmp.3dm"), os.path.join(HERE, "case.3dm")
-    doc.WriteFile(tmp_path, Rhino.FileIO.FileWriteOptions())
-    try:
-        os.replace(tmp_path, out_path)
-    except OSError as e:
-        log("could not replace case.3dm (%s); result left in case.tmp.3dm" % e)
+    if os.path.normcase(doc.Path or "") == os.path.normcase(out_path):
+        doc.WriteFile(out_path, Rhino.FileIO.FileWriteOptions())   # running inside case.3dm itself: just save it
+    else:
+        doc.WriteFile(tmp_path, Rhino.FileIO.FileWriteOptions())
+        try:
+            os.replace(tmp_path, out_path)
+        except OSError as e:
+            log("could not replace case.3dm (%s); result left in case.tmp.3dm" % e)
     doc.Modified = False
     log("done")
 
+def clear_previous(doc):
+    """Remove what an earlier run built (its two layer trees), so the script can run again in the same window."""
+    for name in ("Print parts", "Components (not printed)", "Dummy boards (not printed)"):
+        i = doc.Layers.FindByFullPath(name, -1)
+        if i < 0: continue
+        top = doc.Layers[i]
+        lays = [top] + [l for l in doc.Layers if not l.IsDeleted and l.ParentLayerId == top.Id]
+        for l in lays:
+            for o in doc.Objects.FindByLayer(l) or []:
+                doc.Objects.Delete(o.Id, True)
+        for l in reversed(lays):
+            doc.Layers.Delete(l.Index, True)
+
 try:
+    clear_previous(sc.doc)
     main()
 except Exception:
     log("ERROR:\n" + traceback.format_exc())
 finally:
-    sc.doc.Modified = False   # lets "_-Exit" close Rhino without a save prompt
+    sc.doc.Modified = False
