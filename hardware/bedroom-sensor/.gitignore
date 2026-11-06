@@ -1,2 +1,5 @@
 *.3dmbak
+*.rhl
 build.log
+case.tmp.3dm
+RHI*.tmp

@@ -225,10 +225,12 @@ def make_bh1750(lid_z):
 def import_step(doc, path, lay):
     """Import a STEP file, move all its objects to a layer, return their ids."""
     before = set(o.Id for o in doc.Objects)
-    if not os.path.exists(path) or not doc.Import(path):
+    # command-line import (-_Import) answers its options itself; doc.Import() can open a dialog and hang a batch run
+    if not os.path.exists(path) or not Rhino.RhinoApp.RunScript('_-Import "%s" _Enter' % path, False):
         log("WARNING: could not import " + path)
         return []
     ids = [o.Id for o in doc.Objects if o.Id not in before]
+    doc.Objects.UnselectAll()
     for i in ids:
         o = doc.Objects.FindId(i); o.Attributes.LayerIndex = lay; o.CommitChanges()
     return ids
@@ -328,6 +330,7 @@ def main():
     place_mic(doc, import_step(doc, MIC_STEP, sub("I2S microphone (Adafruit STEP)")))
     doc.Views.Redraw()
 
+    log("checkpoint: previews")
     try:
         view = doc.Views.ActiveView
         view.ActiveViewport.SetProjection(Rhino.Display.DefinedViewportProjection.Perspective, "Perspective", False)
@@ -338,6 +341,7 @@ def main():
         cam.ZoomExtents()
         view.Redraw()
         view.CaptureToBitmap(SD.Size(1200, 900)).Save(os.path.join(HERE, "preview.png"))
+        log("checkpoint: front preview saved")
         # back view for the USB opening and the upper vents
         cam.SetCameraLocations(G.Point3d(0, 0, 45), G.Point3d(140, 170, 120))
         cam.ZoomExtents(); view.Redraw()
@@ -359,7 +363,14 @@ def main():
     except Exception:
         log("preview failed:\n" + traceback.format_exc())
 
-    doc.WriteFile(os.path.join(HERE, "case.3dm"), Rhino.FileIO.FileWriteOptions())
+    log("checkpoint: writing 3dm")
+    # write to a temp file, then swap it in: writing straight to case.3dm stalls on a prompt when it is open in Rhino
+    tmp_path, out_path = os.path.join(HERE, "case.tmp.3dm"), os.path.join(HERE, "case.3dm")
+    doc.WriteFile(tmp_path, Rhino.FileIO.FileWriteOptions())
+    try:
+        os.replace(tmp_path, out_path)
+    except OSError as e:
+        log("could not replace case.3dm (%s); result left in case.tmp.3dm" % e)
     doc.Modified = False
     log("done")
 
