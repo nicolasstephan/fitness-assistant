@@ -8,19 +8,32 @@ const TIMEOUT_MS = 5 * 60 * 1000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+const repoName = (repo) => repo.trim().replace(/^https:\/\/github\.com\//, "").replace(/\/$/, ""); // as in GitHubStore
+
 async function gh(cfg, method, path, body) {
-  const res = await fetch(`${API}/repos/${cfg.repo}/actions/workflows/${WORKFLOW}${path}`, {
+  const repo = repoName(cfg.repo);
+  const headers = {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${cfg.token.trim()}`,
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  const res = await fetch(`${API}/repos/${repo}/actions/workflows/${WORKFLOW}${path}`, {
     method,
     headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${cfg.token.trim()}`,
-      "X-GitHub-Api-Version": "2022-11-28",
+      ...headers,
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
   });
   if (res.ok) return res.status === 204 ? null : res.json();
+  if (res.status === 404) {
+    // GitHub also answers 404 when the token can't see the repo at all: say which one it is
+    const repoRes = await fetch(`${API}/repos/${repo}`, { headers, cache: "no-store" });
+    if (!repoRes.ok) {
+      throw new Error(`Token has no access to “${repo}”: check the repo name and the token's repository access`);
+    }
+  }
   throw new Error(await errorText(res, method));
 }
 
