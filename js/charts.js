@@ -202,7 +202,9 @@ function yAxis(svg, ticks, y, x0, x1, fmt) {
  *         ticks (fixed y ticks), tickFormat,
  *         smooth: { points, label } - rolling average drawn bold; `points` then render faint,
  *         band: { points: [{ t, lo, hi }], label } - shaded range behind the lines (breaks where lo is null),
- *         baseLabel - tooltip label for `points`, trend (from linearTrend) - straight line }
+ *         baseLabel - tooltip label for `points`, trend (from linearTrend) - straight line,
+ *         columns - `points` as one column per day (or week) from 0 instead of a faint line: for daily totals
+ *         like steps, where a line between days hides which value belongs to which day }
  */
 export function lineChart(container, points, opts) {
   const { svg, width, height, tip } = frame(container, opts.height ?? 180);
@@ -213,7 +215,7 @@ export function lineChart(container, points, opts) {
   if (!all.length) return noData(container);
   const t0 = Math.min(...all.map((p) => p.t)), t1 = Math.max(...all.map((p) => p.t));
   // no values at all: still the frame, dates and "No data" bands (fixed ticks if the chart has them)
-  const [vMin, vMax] = [Math.min(...vals), Math.max(...vals)];
+  const [vMin, vMax] = [opts.columns ? 0 : Math.min(...vals), Math.max(...vals)];
   const pad = vMin === vMax ? Math.abs(vMin) * 0.1 || 1 : 0; // one distinct value: open the axis around it
   const ticks = opts.ticks ?? (vals.length ? niceTicks(vMin - pad, vMax + pad) : [0, 1]);
   const [lo, hi] = [ticks[0], ticks.at(-1)];
@@ -257,12 +259,25 @@ export function lineChart(container, points, opts) {
     flush();
     svgEl("path", { d, class: "band", fill: opts.color }, svg);
   }
-  svgEl("path", { d: pathOf(points), class: smooth ? "line faint" : "line", stroke: opts.color }, svg);
+  if (opts.columns) {
+    // one column per point, centered on its day line, as wide as the spacing allows (1 px gap at least)
+    const step = points.length > 1 ? (x(points[1].t) - x(points[0].t)) : 24;
+    const w = Math.max(1, Math.min(16, step * 0.7, step - 1));
+    let d = "";
+    for (const p of points) {
+      if (p.v == null) continue;
+      const top = y(p.v), base = y(Math.max(lo, 0));
+      d += `M${(x(p.t) - w / 2).toFixed(1)},${base.toFixed(1)}V${top.toFixed(1)}h${w.toFixed(1)}V${base.toFixed(1)}Z`;
+    }
+    svgEl("path", { d, class: "columns", fill: opts.color }, svg);
+  } else {
+    svgEl("path", { d: pathOf(points), class: smooth ? "line faint" : "line", stroke: opts.color }, svg);
+  }
   drawTrends(svg, opts.trend, x, y);
   if (smooth) svgEl("path", { d: pathOf(smooth), class: "line", stroke: opts.color }, svg);
   // a value without neighbors draws no line segment: mark it as a dot so single days stay visible
   points.forEach((p, i) => {
-    if (p.v != null && points[i - 1]?.v == null && points[i + 1]?.v == null) {
+    if (!opts.columns && p.v != null && points[i - 1]?.v == null && points[i + 1]?.v == null) {
       svgEl("circle", { cx: x(p.t), cy: y(p.v), r: 3, fill: opts.color }, svg);
     }
   });

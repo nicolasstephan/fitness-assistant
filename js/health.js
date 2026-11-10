@@ -59,6 +59,16 @@ const emptyDay = (date) => ({
   sleep: { performance: null, score: null, asleepMin: null, deepMin: null, remMin: null, lightMin: null }, journal: {},
 });
 // activity totals of a day the band did not cover in full (first day worn, today so far) are left out
+/** "today 13:41", "yesterday 07:10", else "Thu 6 Nov, 23:43" (local time). */
+function updatedText(iso) {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const day = (t) => new Date(t).toDateString();
+  if (day(d) === day(Date.now())) return `today ${time}`;
+  if (day(d) === day(Date.now() - DAY)) return `yesterday ${time}`;
+  return `${d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}, ${time}`;
+}
+
 const fullDay = (get) => (d) => (d.partialDay ? null : get(d));
 const hasData = (d) => d.recovery != null || d.strain != null || d.sleep.asleepMin != null || d.hrv != null || d.steps != null;
 
@@ -293,9 +303,12 @@ export class HealthView {
     const { to } = this.doc.range;
     const sources = this.doc.sources ?? [{ name: "WHOOP", ...this.doc.range, importedAt: this.doc.importedAt }];
     const short = (date) => new Date(tUTC(date)).toLocaleDateString(undefined, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
+    // only the live source (Polar): the WHOOP export is history and never updates
+    const live = sources.filter((s) => s.name !== "WHOOP");
+    const updatedAt = live.map((s) => s.importedAt).filter(Boolean).sort().at(-1);
     this.root.querySelector("#health-source").textContent =
-      sources.map((s) => `${s.name} ${short(s.from)} – ${short(s.to)}`).join(" · ") +
-      ` · updated ${new Date(this.doc.importedAt).toLocaleDateString()}` +
+      live.map((s) => `${s.name} ${short(s.from)} – ${short(s.to)}`).join(" · ") +
+      (updatedAt ? ` · updated ${updatedText(updatedAt)}` : "") +
       (to < localToday() ? ` · no data since then, tap ⟳ to fetch` : "");
 
     this.renderRecharge();
@@ -521,9 +534,9 @@ export class HealthView {
         cls: good == null ? "" : good ? "good" : "bad",
       };
     };
-    const keys = (weekly, color, trends) => [
+    const keys = (weekly, color, trends, columns = false) => [
       { name: smoothLabel, color, line: true },
-      { name: weekly ? "Weekly average" : "Daily", color, line: true, faint: true },
+      { name: weekly ? "Weekly average" : "Daily", color, line: !columns, faint: true },
       ...(trends.length ? [{ name: trends.length > 1 ? "Trend per device" : "Trend", color: trendColor, line: true }] : []),
     ];
     const trendAt = (trends, t) => trends.find((tr) => t >= tr.t0 && t <= tr.t1);
@@ -554,7 +567,7 @@ export class HealthView {
           ...(trends.length ? [{ label: "Trend", get: (p) => { const tr = trendAt(trends, p.t); return tr ? opts.format(tr.at(p.t)) : null; }, num: true }] : []),
         ],
         b.points,
-        keys(b.weekly, blue, trends),
+        keys(b.weekly, blue, trends, opts.columns),
         long ? verdict(trends, fmtDelta, higherIsGood) : null);
     };
 
@@ -681,8 +694,8 @@ export class HealthView {
     }
 
     if (fromWhoop) lineCard(activityGroup, "Day strain", "WHOOP strain, 0–21", (d) => d.strain, { ticks: [0, 7, 14, 21], tickFormat: (v) => `${v}`, format: (v) => v.toFixed(1) }, "Strain", oneDecimal(""), null);
-    if (cur.some((d) => d.cardioLoad != null)) lineCard(activityGroup, "Cardio load", "Polar daily cardio load (TRIMP-based), full days only", fullDay((d) => d.cardioLoad), { format: (v) => v.toFixed(0) }, "Cardio load", round(""), null);
-    if (cur.some((d) => d.steps != null)) lineCard(activityGroup, "Steps", "Per day, Polar, full days only", fullDay((d) => d.steps), { unit: "steps", format: (v) => Math.round(v).toLocaleString() }, "Steps", round("steps"), true);
+    if (cur.some((d) => d.cardioLoad != null)) lineCard(activityGroup, "Cardio load", "Polar daily cardio load (TRIMP-based), full days only", fullDay((d) => d.cardioLoad), { format: (v) => v.toFixed(0), columns: true }, "Cardio load", round(""), null);
+    if (cur.some((d) => d.steps != null)) lineCard(activityGroup, "Steps", "Per day, Polar, full days only", fullDay((d) => d.steps), { unit: "steps", format: (v) => Math.round(v).toLocaleString(), tickFormat: (v) => (v >= 1000 ? `${v / 1000}k` : `${v}`), columns: true }, "Steps", round("steps"), true);
 
     // workouts by activity (hours), top 6 + Other
     const byActivity = new Map();
@@ -920,6 +933,7 @@ export class HealthView {
         sw.style.background = s.color;
         if (s.line) sw.className = s.faint ? "line-key faint" : "line-key"; // legends mirror the mark: short stroke for lines
         else if (s.area) sw.className = "area-key";
+        else if (s.faint) sw.className = "faint";
         item.append(sw, document.createTextNode(s.name));
         lg.appendChild(item);
       }
