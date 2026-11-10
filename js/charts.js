@@ -215,8 +215,8 @@ function tooltip(container) {
       // right of the pointer, flipped to the left near the edge
       let left = x + 12;
       if (left + tip.offsetWidth > container.clientWidth) left = x - tip.offsetWidth - 12;
-      tip.style.left = `${Math.max(0, left)}px`;
-      tip.style.top = `${Math.max(0, y - tip.offsetHeight / 2)}px`;
+      tip.style.left = `${Math.max(0, Math.min(left, container.clientWidth - tip.offsetWidth))}px`;
+      tip.style.top = `${Math.max(0, Math.min(y - tip.offsetHeight / 2, container.clientHeight - tip.offsetHeight))}px`;
     },
     hide() {
       tip.hidden = true;
@@ -521,6 +521,31 @@ export function dataTable(container, columns, rows) {
     }
   }
   container.appendChild(table);
+  fitTable(container);
+}
+
+/** Tables up to this tall are shown whole; only taller ones scroll (Nicolas: a scrollbar only when really needed). */
+const SCROLL_FROM = 720;
+
+/**
+ * A table's container scrolls only when there is a real amount to scroll: up to SCROLL_FROM px tall it shows
+ * whole; a little too wide, it gets tighter type and padding first (sideways scrolling only if it still doesn't fit).
+ */
+export function fitTable(container) {
+  // a card often gets its final width only after the table is in it (grid, fonts): check again when the width changes
+  if (!container.fitObserver && typeof ResizeObserver !== "undefined") {
+    container.fitObserver = new ResizeObserver(() => {
+      if (container.clientWidth === container.fitWidth || !container.querySelector(":scope > table")) return; // width only: no loop over the height
+      fitTable(container);
+    });
+    container.fitObserver.observe(container);
+  }
+  container.fitWidth = container.clientWidth;
+  container.classList.remove("fit-whole", "fit-compact");
+  if (!container.clientWidth) return; // not laid out (hidden): CSS defaults
+  const table = container.querySelector("table");
+  if (table && table.scrollWidth > container.clientWidth) container.classList.add("fit-compact");
+  if (container.scrollHeight > container.clientHeight && container.scrollHeight <= SCROLL_FROM) container.classList.add("fit-whole");
 }
 
 /**

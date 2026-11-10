@@ -97,6 +97,15 @@ Settings: `<select>` with System / Light / Dark calling `setThemeMode()`.
   model is fitted into the area the overlays leave free (fitness-assistant: `viewer.setInsets`).
 - Text at least 12px, including chart axes; secondary text uses `--text-dim`, not lighter.
 
+## Scrollbars (Nicolas, 2026-11-10)
+A scrollbar only where there is really something to scroll. Windows shows classic scrollbars, so a box that is
+2 px too big gets a full bar; test in Chrome on Windows, not only in Safari/WebKit (overlay scrollbars hide it).
+- Charts never scroll: no `overflow: auto` on chart containers; tooltips and labels stay inside the chart.
+- Tables show whole up to about one screen (~720 px); only taller ones scroll. A table a little too wide gets
+  tighter type and padding first; sideways scrolling only when it still doesn't fit.
+- Page-level scrolling (the main view) is fine; nested scroll boxes need a reason.
+
 ## Before shipping
 - Check System, Light and Dark, and switch the system setting while the app is open.
 - Desktop and 390px phone width.
+- No scrollbar on anything that has almost nothing to scroll (see Scrollbars).
