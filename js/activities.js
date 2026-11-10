@@ -146,12 +146,15 @@ export class ActivityView {
    * root: the #activities section; dialog: the "log activity" <dialog>. getLog/saveLog: the training log doc.
    * getTracker(): { source, workouts } or null. onShowSport({ id, sport, title } | null): show a sport's muscles.
    * describeSession(activity): optional one-line heart-rate summary of a resting session (or null).
+   * sessionSpark(activity): optional small heart-rate curve (svg) for a resting session's row, or null;
+   * sessionDetail(el, activity): draws its large chart into el when the row is tapped.
    * rest: true = only resting sessions (Recover page), false = only sports (Exercise).
    * banner: optional app-wide bar listing all running recordings, of both views (give it to one view only);
    * onOpen(sport): go to the view that lists that activity. The log dialog is shared by both views.
    */
-  constructor(root, dialog, { rest = false, getLog, saveLog, getTracker, onShowSport, describeSession, banner, onOpen }) {
-    Object.assign(this, { root, dialog, getLog, saveLog, getTracker, onShowSport, describeSession, banner, onOpen });
+  constructor(root, dialog, { rest = false, getLog, saveLog, getTracker, onShowSport, describeSession, sessionSpark, sessionDetail, banner, onOpen }) {
+    Object.assign(this, { root, dialog, getLog, saveLog, getTracker, onShowSport, describeSession, sessionSpark, sessionDetail, banner, onOpen });
+    this.expanded = null; // id of the resting session whose large heart-rate chart is open
     this.sports = SPORTS.filter((s) => !!s.rest === rest);
     this.selected = null; // id of the row whose muscles are shown
     this.timer = null;
@@ -209,7 +212,12 @@ export class ActivityView {
     }
     if (t.dataset.showActivity) {
       const row = this.rows.get(t.dataset.showActivity);
-      if (sportById.get(row?.sport)?.rest) return; // no muscles to show
+      if (sportById.get(row?.sport)?.rest) {
+        // no muscles to show: a session with heart rate opens its large chart instead
+        if (!t.classList.contains("has-hr")) return;
+        this.expanded = this.expanded === t.dataset.showActivity ? null : t.dataset.showActivity;
+        return this.render();
+      }
       this.select(this.selected === t.dataset.showActivity ? null : t.dataset.showActivity, row);
     }
   }
@@ -439,24 +447,33 @@ export class ActivityView {
     };
 
     const list = this.part("list");
-    list.replaceChildren(...activities.slice(0, LIST_LENGTH).map((a) => {
+    let detail = null; // the open session's chart, drawn once the list is in the page
+    list.replaceChildren(...activities.slice(0, LIST_LENGTH).flatMap((a) => {
       const id = a.id ?? `auto:${trackerKey(a.tracker)}`;
       this.rows.set(id, a);
       const rest = sportById.get(a.sport)?.rest;
       const minutes = (toMs(a.end) - toMs(a.start)) / MIN;
       const hr = rest ? this.describeSession?.(a) : null;
+      const spark = rest ? this.sessionSpark?.(a) : null;
+      const open = spark && id === this.expanded;
       const text = el("div", { className: "li-text" },
         el("span", { textContent: nameOf(a.sport) }),
         el("small", { className: "when", textContent: `${fmtDay(a.start)} · ${a.start.slice(11)}–${a.end.slice(11)} · ${fmtDuration(minutes)}` }),
         hr ? el("small", { className: "tracker-match", textContent: hr })
           : a.tracker ? trackerLine(a.tracker) : el("small", { textContent: rest ? "No heart rate yet" : "No tracker data" }));
-      return el("li", { className: [id === this.selected ? "active" : "", rest ? "rest" : ""].join(" ").trim(), dataset: { showActivity: id },
-        title: rest ? "" : "Show the muscles this trains" },
+      const li = el("li", { className: [id === this.selected || open ? "active" : "", rest ? "rest" : "", spark ? "has-hr" : ""].join(" ").trim(),
+        dataset: { showActivity: id }, title: rest ? (spark ? "Show the heart rate" : "") : "Show the muscles this trains" },
         text,
+        ...(spark ? [spark] : []),
         ...(a.auto ? [] : [
           el("button", { type: "button", className: "icon-btn", dataset: { editActivity: a.id }, ariaLabel: "Edit activity", title: "Edit times", textContent: "✎" }),
           el("button", { type: "button", className: "icon-btn", dataset: { deleteActivity: a.id }, ariaLabel: "Delete activity", textContent: "×" })]));
+      if (!open) return [li];
+      detail = { el: el("div", { className: "session-chart" }), a };
+      return [li, el("li", { className: "session-detail" }, detail.el)];
     }));
+    if (detail) this.sessionDetail?.(detail.el, detail.a);
+    else this.expanded = null;
     const history = this.part("history");
     history.hidden = !activities.length;
     history.querySelector("summary h3").textContent = `History (${activities.length})`;

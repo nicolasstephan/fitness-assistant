@@ -182,12 +182,14 @@
         <div class="chips start-pick activity-start-pick" hidden></div>
         <div class="workout-bar running activity-running" hidden></div>
         <p class="hint activity-summary"></p>
-        <p class="hint">Each session is compared with your heart rate in the 20 min before (Health &gt; Resting sessions).</p>
         <details class="fold activity-history" hidden>
           <summary><h3>History</h3></summary>
+          <p class="hint">Each curve: heart rate in the 20 min before, the session (shaded) and the 30 min after; dashed = the level before. Tap a session for the large chart.</p>
           <ul class="list activity-list"></ul>
         </details>
       </section>
+      <!-- heart rate around the sessions and how regularly (recover.js) -->
+      <div id="recover-charts" class="recover-charts"></div>
     </div>
   </main>
 

@@ -484,6 +484,17 @@ body:not([data-view="exercise"]) .layout { display: none; }
 .today-inner { max-width: 560px; margin: 0 auto; }
 /* recover: the resting sessions as their own page (same blocks as Other activities, without the divider) */
 .recover .activities { border-top: 0; padding-top: 0; }
+.recover-charts .cards { grid-template-columns: 1fr; }
+.recover-charts { margin-top: 12px; }
+/* History rows: a small heart-rate curve per session; a tapped one opens its large chart below */
+.session-spark { flex: none; }
+.session-spark .spark-band, .session-chart.chart .gap { fill: color-mix(in srgb, var(--text) 8%, transparent); }
+.session-spark .spark-base { stroke: var(--text-dim); stroke-width: 1; stroke-dasharray: 2 2; }
+.session-spark .spark-line { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.activities .list li.rest.has-hr { cursor: pointer; }
+.activities .list li.rest.active { background: var(--chip); } /* red tint is for muscles */
+.list li.session-detail { display: block; cursor: default; padding: 4px 0 10px; }
+.list li.session-detail:hover { background: none; }
 
 .health {
   flex: 1;

@@ -106,7 +106,7 @@ export class MinuteHr {
   }
 }
 
-const signed = (v) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${Math.abs(Math.round(v))}`;
+const signed = (x) => { const v = Math.round(x); return `${v > 0 ? "+" : v < 0 ? "−" : "±"}${Math.abs(v)}`; };
 
 /** One line for a session row: "HR 68 before → 62 during (−6) · 64 after (−4)". */
 export function describeHr(r) {

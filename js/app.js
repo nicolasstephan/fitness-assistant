@@ -10,6 +10,7 @@ import { weeklySets, volumeColors, workoutMuscles, VOLUME_BINS, VOLUME_TARGET } 
 import { WorkoutView } from "./workouts.js";
 import { ActivityView } from "./activities.js";
 import { MinuteHr, describeHr } from "./hr.js";
+import { RecoverCharts, sessionSpark, sessionDetail } from "./recover.js";
 import { sportById } from "./data/sports.js";
 import { SupplementDialog } from "./supplements.js";
 import { checkForUpdate } from "./update-check.js";
@@ -34,8 +35,6 @@ document.addEventListener("input", (e) => {
 const viewer = new MuscleViewer($("#viewer"));
 const health = new HealthView($("#health-view"));
 const minuteHr = new MinuteHr(); // Loop heart rate around resting sessions (vagus nerve stimulation, meditation)
-health.setHr(minuteHr);
-health.onHrLoaded = () => recoverView.render(); // session rows show their heart rate change
 const state = {
   mine: [], // ids of the user's exercises, in the order added
   exercises: new Set(), // selected (highlighted) exercise ids
@@ -286,6 +285,7 @@ trainingLog.onChange = () => {
   workoutView.render(); // renderMyExercises -> refresh() already redraws the volume heatmap
   activityView.render();
   recoverView.render();
+  if (document.body.dataset.view === "recover") recoverCharts.render();
   health.setTrainingLog(trainingLog.doc); // manual workouts in the health view
   loadSessionHr();
 };
@@ -296,7 +296,7 @@ function loadSessionHr() {
   minuteHr.load(rest, localToday()).then((changed) => {
     if (!changed) return;
     recoverView.render();
-    health.render();
+    if (document.body.dataset.view === "recover") recoverCharts.render();
   });
 }
 journal.onChange = (doc) => {
@@ -399,7 +399,10 @@ function showView(view) {
   document.querySelectorAll("[data-show]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.show === view)));
   if (view === "health") health.render();
   else if (view === "today") checkin.render(); // its charts are sized from the page, so draw once visible
-  else if (view === "exercise") updateInsets(); // the stage was hidden: fit the model now that it has a size
+  else if (view === "recover") {
+    recoverView.render(); // an open session chart is sized from the page too
+    recoverCharts.render();
+  } else updateInsets(); // the stage was hidden: fit the model now that it has a size
   writeHash();
 }
 
@@ -732,8 +735,17 @@ const recoverView = new ActivityView($("#recovery"), $("#activity-dialog"), {
   getLog: () => trainingLog.doc,
   saveLog: (doc) => trainingLog.update(doc),
   getTracker,
-  // heart rate change of a resting session, once its days are loaded (the health view loads them)
+  // heart rate of a resting session, once its days are loaded (recoverCharts loads them): a line, a small curve,
+  // and the large chart of a tapped row
   describeSession: (a) => describeHr(minuteHr.session(a)),
+  sessionSpark: (a) => sessionSpark(a, minuteHr.session(a)),
+  sessionDetail: (el, a) => sessionDetail(el, a, minuteHr.session(a)),
+});
+
+const recoverCharts = new RecoverCharts($("#recover-charts"), {
+  getLog: () => trainingLog.doc,
+  hr: minuteHr,
+  onHrLoaded: () => recoverView.render(),
 });
 
 // ---------- sync settings dialog
@@ -763,6 +775,10 @@ addEventListener("themechange", () => {
   if (state.planFocus) workoutView.renderProgress(trainingLog.doc); // progress chart colors too
   if (document.body.dataset.view === "health") health.render();
   if (document.body.dataset.view === "today") checkin.render();
+  if (document.body.dataset.view === "recover") {
+    recoverView.render();
+    recoverCharts.render();
+  }
 });
 $("#sync-status").addEventListener("click", openSyncDialog);
 $("#sync-cancel").addEventListener("click", () => dialog.close());

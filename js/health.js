@@ -1,10 +1,9 @@
 // Health dashboard: WHOOP history and Polar data (health/whoop.json, health/polar.json in the private data repo).
-import { lineChart, stackedColumns, hBars, dataTable, linearTrend, offsetChart } from "./charts.js";
+import { lineChart, stackedColumns, hBars, dataTable, linearTrend } from "./charts.js";
 import { checkinQuestions, supplementQuestions, localToday } from "./checkin.js";
 import { versionOn } from "./supplements.js";
 import { combinedWorkouts } from "./activities.js";
 import { SPORTS, sportById } from "./data/sports.js";
-import { BEFORE_MIN } from "./hr.js";
 import { infoButton } from "./info.js";
 import {
   annotateDeviations, journalCard, lateWorkoutCard, trainingAfterCard, sleepGateCard, feelingCard,
@@ -192,11 +191,6 @@ export class HealthView {
   setTrainingLog(log) {
     this.log = log;
     this.render();
-  }
-
-  /** Minute heart rate (hr.js MinuteHr) for the resting-session card. */
-  setHr(hr) {
-    this.hr = hr;
   }
 
   setMessage(text) {
@@ -503,7 +497,6 @@ export class HealthView {
     const sleepGroup = group("Recovery & sleep");
     const activityGroup = group("Activity");
     const trainingGroup = group("Training");
-    const sessionGroup = group("Resting sessions");
     const insightGroup = group("What affects your recovery",
       "Your data cross-referenced: all days, not only the selected range, because these comparisons need many nights. Green = better than your normal, red = worse.");
     const summaryGroup = group("Summary");
@@ -712,7 +705,6 @@ export class HealthView {
     this.zonesCard(trainingGroup, workouts);
     this.workoutsCard(trainingGroup, workouts);
     if (this.log?.sessions.length) readinessStrengthCard(this, trainingGroup, ctx);
-    this.sessionsCard(sessionGroup, start);
     tirednessCard(this, insightGroup, ctx);
     journalCard(this, insightGroup, ctx);
     lateWorkoutCard(this, insightGroup, ctx);
@@ -835,77 +827,6 @@ export class HealthView {
     ], all);
   }
 
-  /**
-   * Vagus nerve stimulation and meditation against heart rate: each session vs. its own 20 minutes before
-   * (minute HR from the Loop), and the average change curve per kind. Loads the days it needs, then redraws.
-   */
-  sessionsCard(cards, start) {
-    const sessions = (this.log?.activities ?? [])
-      .filter((a) => a.end && sportById.get(a.sport)?.rest && tUTC(a.start.slice(0, 10)) >= start)
-      .sort((a, b) => b.start.localeCompare(a.start));
-    if (!sessions.length) return;
-    this.hr?.load(sessions, localToday()).then((changed) => {
-      if (!changed) return;
-      this.render();
-      this.onHrLoaded?.();
-    });
-    const rows = sessions.map((a) => ({ a, r: this.hr?.session(a) ?? null }));
-    const measured = rows.filter((x) => x.r);
-    const kinds = REST_SPORTS.map((sport, i) => ({ sport, color: css(`--series-${i + 1}`), rows: measured.filter((x) => x.a.sport === sport.id) }))
-      .filter((k) => k.rows.length);
-    const signed = (v) => (v == null ? null : `${v > 0 ? "+" : v < 0 ? "−" : "±"}${Math.abs(v).toFixed(1)}`);
-    const avg = (xs) => mean(xs.filter((v) => v != null));
-    const nameOf = (id) => sportById.get(id).short ?? sportById.get(id).name;
-    const summary = kinds.map((k) => `${k.sport.short ?? k.sport.name} ${signed(avg(k.rows.map((x) => x.r.dDuring)))} during, `
-      + `${signed(avg(k.rows.map((x) => x.r.dAfter))) ?? "–"} after (${k.rows.length}×)`).join(" · ");
-
-    // average change curve per kind: mean of the per-minute deltas in 5-minute bins (the Loop samples every 5 min at rest)
-    const meanMin = Math.round(avg(measured.map((x) => x.r.minutes)) ?? 0);
-    const series = kinds.map((k) => {
-      const bins = new Map();
-      for (const { r } of k.rows) {
-        for (const p of r.curve) {
-          const b = Math.round(p.m / 5) * 5;
-          if (!bins.has(b)) bins.set(b, []);
-          bins.get(b).push(p.v);
-        }
-      }
-      return { name: k.sport.name, color: k.color, points: [...bins].sort((a, b) => a[0] - b[0]).map(([m, vs]) => ({ m, v: mean(vs) })) };
-    });
-    const minutes = (a) => Math.round((Date.parse(`${a.end}:00Z`) - Date.parse(`${a.start}:00Z`)) / 60000);
-
-    const card = this.card(cards, "Sessions vs. heart rate",
-      measured.length ? `Heart rate change from the ${BEFORE_MIN} min before, bpm · ${summary}`
-        : `Minute heart rate from the Loop, compared with the ${BEFORE_MIN} minutes before each session`,
-      measured.length ? (el) => offsetChart(el, series, {
-        band: [0, meanMin], bandLabel: `avg session ${meanMin} min`, unit: "bpm", zero: true,
-        format: (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(Math.abs(v) < 10 ? 1 : 0)}`,
-      }) : null,
-      [
-        { label: "Date", get: (x) => `${x.a.start.slice(0, 10)} ${x.a.start.slice(11)}` },
-        { label: "Activity", get: (x) => nameOf(x.a.sport) },
-        { label: "Min", get: (x) => minutes(x.a), num: true },
-        { label: "Before", get: (x) => (x.r ? Math.round(x.r.before) : null), num: true },
-        { label: "During", get: (x) => (x.r ? `${Math.round(x.r.during)} (${signed(x.r.dDuring)})` : null), num: true },
-        { label: "After", get: (x) => (x.r?.after != null ? `${Math.round(x.r.after)} (${signed(x.r.dAfter)})` : null), num: true },
-        { label: "Lowest", get: (x) => x.r?.min, num: true },
-      ],
-      rows,
-      kinds.map((k) => ({ name: k.sport.name, color: k.color, line: true })));
-    card.classList.add("wide");
-    if (!measured.length) {
-      card.querySelector(".card-body").textContent = this.hr?.fetchDay
-        ? "No heart rate for these sessions yet: the Loop's data arrives with the next Polar sync."
-        : "Connect GitHub sync to load heart rate.";
-    }
-    const note = document.createElement("p");
-    note.className = "card-note";
-    note.textContent = "Sitting still lowers heart rate by itself, so meditation without stimulation is the fair comparison. "
-      + "At rest the Loop measures every 5 minutes; start a workout on the Loop during a session for second-by-second heart rate. "
-      + "The night after is in Journal vs. recovery (\"… the day before?\").";
-    card.appendChild(note);
-  }
-
   /** A chart card with a Chart/Table toggle. Returns the card element. */
   card(parent, title, subtitle, drawChart, tableColumns, tableRows, legend, summary) {
     const card = document.createElement("article");
@@ -969,4 +890,12 @@ export class HealthView {
     }
     return card;
   }
+}
+
+/**
+ * The same chart card for another page (Recover): host needs a pendingDraws array, whose draws the host runs once
+ * every card is in the page (charts are sized from their container).
+ */
+export function chartCard(host, ...args) {
+  return HealthView.prototype.card.apply(host, args);
 }

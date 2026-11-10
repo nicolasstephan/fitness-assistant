@@ -389,7 +389,8 @@ export function lineChart(container, points, opts) {
 
 /**
  * Stacked columns. rows: [{ t, values: [..] }], series: [{ name, color }] bottom-up.
- * opts: { format, unit, describe(t), smooth: [{ t, v }] rolling average of the total, trend (from linearTrend) }
+ * opts: { format, unit, describe(t), smooth: [{ t, v }] rolling average of the total, trend (from linearTrend),
+ *         labels(t): one label per column instead of the date ticks }
  */
 export function stackedColumns(container, rows, series, opts) {
   const { svg, width, height, tip } = frame(container, opts.height ?? 200);
@@ -412,7 +413,8 @@ export function stackedColumns(container, rows, series, opts) {
   drawGaps(svg, opts.gaps, xBand, width, height);
   drawMarks(svg, opts.marks, xBand, width, height);
   const colOf = (t) => xCenter(Math.round(((t - t0) / (t1 - t0 || 1)) * (rows.length - 1)));
-  drawTimeLabels(svg, timeTicks(t0, t1, plotW), colOf, width, height);
+  // own labels (e.g. one per weekly column) or the usual date ticks
+  drawTimeLabels(svg, opts.labels ? { ticks: rows.map((r) => r.t), fmt: opts.labels } : timeTicks(t0, t1, plotW), colOf, width, height);
 
   rows.forEach((row, i) => {
     const g = svgEl("g", { class: "col" }, svg);
@@ -530,7 +532,7 @@ export function offsetChart(container, series, opts = {}) {
   const all = series.flatMap((s) => s.points);
   if (!all.length) return noData(container);
   const m0 = Math.min(...all.map((p) => p.m)), m1 = Math.max(...all.map((p) => p.m));
-  const vals = all.map((p) => p.v).concat(opts.zero ? [0] : []);
+  const vals = all.map((p) => p.v).concat(opts.zero ? [0] : [], opts.ref ? [opts.ref.v] : []);
   const ticks = niceTicks(Math.min(...vals), Math.max(...vals));
   const [lo, hi] = [ticks[0], ticks.at(-1)];
   const x = (m) => PAD.left + ((m - m0) / (m1 - m0 || 1)) * (width - PAD.left - PAD.right);
@@ -543,6 +545,10 @@ export function offsetChart(container, series, opts = {}) {
     svgEl("text", { x: b0 + 4, y: PAD.top + 14, class: "gap-label" }, svg).textContent = opts.bandLabel ?? "";
   }
   if (opts.zero && lo < 0 && hi > 0) svgEl("line", { x1: PAD.left, x2: width - PAD.right, y1: y(0), y2: y(0), class: "mark" }, svg);
+  if (opts.ref) {
+    svgEl("line", { x1: PAD.left, x2: width - PAD.right, y1: y(opts.ref.v), y2: y(opts.ref.v), class: "mark" }, svg);
+    svgEl("text", { x: width - PAD.right + 4, y: y(opts.ref.v), class: "mark-label", "dominant-baseline": "middle" }, svg).textContent = opts.ref.label ?? "";
+  }
   // minute ticks every 10 / 15 / 30 min, always through 0 (the start)
   const step = [10, 15, 30, 60].find((s) => ((m1 - m0) / s) * 44 <= width - PAD.left - PAD.right) ?? 60;
   for (let m = Math.ceil(m0 / step) * step; m <= m1; m += step) {
@@ -574,13 +580,78 @@ export function offsetChart(container, series, opts = {}) {
     cross.setAttribute("x1", x(m));
     cross.setAttribute("x2", x(m));
     cross.setAttribute("visibility", "visible");
-    if (rows.length) tip.show(x(m), e.clientY - svg.getBoundingClientRect().top, m === 0 ? "Start" : `${m > 0 ? "+" : "−"}${Math.abs(m)} min`, rows);
+    const title = opts.describe ? opts.describe(m) : m === 0 ? "Start" : `${m > 0 ? "+" : "−"}${Math.abs(m)} min`;
+    if (rows.length) tip.show(x(m), e.clientY - svg.getBoundingClientRect().top, title, rows);
     else tip.hide();
   };
   hit.addEventListener("pointermove", move);
   hit.addEventListener("pointerdown", move);
   hit.addEventListener("pointerleave", () => {
     cross.setAttribute("visibility", "hidden");
+    tip.hide();
+  });
+}
+
+/**
+ * Dots over days, one per event (several per day allowed), with an optional running line per series.
+ * series: [{ name, color, points: [{ t (UTC day ms), v, title }], smooth?: [{ t, v }] }].
+ * opts: { format, unit, zero (draw and include 0), smoothLabel, t0, t1 (fixed day range), height }
+ */
+export function dotChart(container, series, opts = {}) {
+  const { svg, width, height, tip } = frame(container, opts.height ?? 200);
+  const all = series.flatMap((s) => s.points);
+  if (!all.length) return noData(container);
+  const t0 = opts.t0 ?? Math.min(...all.map((p) => p.t)), t1 = Math.max(opts.t1 ?? 0, ...all.map((p) => p.t));
+  const vals = all.map((p) => p.v).concat(opts.zero ? [0] : []);
+  const [vMin, vMax] = [Math.min(...vals), Math.max(...vals)];
+  const ticks = niceTicks(vMin - (vMin === vMax ? 1 : 0), vMax + (vMin === vMax ? 1 : 0));
+  const [lo, hi] = [ticks[0], ticks.at(-1)];
+  const x = (t) => PAD.left + ((t - t0) / (t1 - t0 || 1)) * (width - PAD.left - PAD.right);
+  const y = (v) => PAD.top + (1 - (v - lo) / (hi - lo || 1)) * (height - PAD.top - PAD.bottom);
+  const fmt = opts.format ?? ((v) => `${Math.round(v)}`);
+  yAxis(svg, ticks, y, PAD.left, width - PAD.right, fmt);
+  dayGrid(svg, t0, t1, x, height);
+  drawTimeLabels(svg, timeTicks(t0, t1, width - PAD.left - PAD.right), x, width, height);
+  if (opts.zero && lo < 0 && hi > 0) svgEl("line", { x1: PAD.left, x2: width - PAD.right, y1: y(0), y2: y(0), class: "mark" }, svg);
+  for (const s of series) {
+    if (s.smooth?.length > 1) {
+      const d = s.smooth.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
+      svgEl("path", { d, class: "line", stroke: s.color }, svg);
+    }
+  }
+  // dots of one day side by side, so two sessions on a day stay apart
+  const perDay = new Map();
+  const placed = [];
+  for (const s of series) {
+    for (const p of s.points) {
+      const k = perDay.get(p.t) ?? 0;
+      perDay.set(p.t, k + 1);
+      const cx = x(p.t) + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 5;
+      placed.push({ s, p, cx, cy: y(p.v) });
+      svgEl("circle", { cx, cy: y(p.v), r: 4, fill: s.color, class: "dot", opacity: s.smooth ? 0.75 : 1 }, svg);
+    }
+  }
+  const unit = opts.unit ? ` ${opts.unit}` : "";
+  const ring = svgEl("circle", { r: 6, fill: "none", stroke: "var(--text)", "stroke-width": 1.5, visibility: "hidden" }, svg);
+  const hit = svgEl("rect", { x: PAD.left, y: 0, width: width - PAD.left - PAD.right, height, fill: "transparent" }, svg);
+  const move = (e) => {
+    const r = svg.getBoundingClientRect();
+    const px = e.clientX - r.left, py = e.clientY - r.top;
+    let best = null;
+    for (const d of placed) if (!best || Math.hypot(d.cx - px, (d.cy - py) / 3) < Math.hypot(best.cx - px, (best.cy - py) / 3)) best = d;
+    if (!best) return;
+    ring.setAttribute("cx", best.cx);
+    ring.setAttribute("cy", best.cy);
+    ring.setAttribute("visibility", "visible");
+    const rows = [{ value: `${fmt(best.p.v)}${unit}`, label: best.s.name, color: best.s.color }];
+    const avg = best.s.smooth?.find((q) => q.t === best.p.t);
+    if (avg) rows.push({ value: `${fmt(avg.v)}${unit}`, label: opts.smoothLabel ?? "average" });
+    tip.show(best.cx, best.cy, best.p.title ?? fmtDate(best.p.t, { weekday: "short", day: "numeric", month: "short" }), rows);
+  };
+  hit.addEventListener("pointermove", move);
+  hit.addEventListener("pointerdown", move);
+  hit.addEventListener("pointerleave", () => {
+    ring.setAttribute("visibility", "hidden");
     tip.hide();
   });
 }

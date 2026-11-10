@@ -114,6 +114,14 @@ const INFO = {
     source: "Every logged exercise compared with its previous session (estimated 1-rep max with weight, best set's reps without), grouped by that morning's Polar Nightly Recharge or WHOOP recovery.",
     read: "If sessions on low-readiness mornings are clearly worse, plan heavy days for good mornings and keep low mornings light. If there's no difference, readiness doesn't need to decide your strength days.",
   },
+  "Heart rate drop per session": {
+    source: "Polar Loop continuous heart rate (one value every ~5 minutes at rest): the average during each TENS or meditation session minus the average in the 20 minutes before it. The line is the average of the last 5 sessions of that kind.",
+    read: "Below 0 = heart rate went down during the session. If the TENS dots sit clearly below the meditation dots, the stimulation adds something beyond sitting still. A drifting line shows whether the effect holds or fades over the weeks.",
+  },
+  "Minutes per week": {
+    source: "Your logged and recorded TENS and meditation sessions, minutes per week (Monday to Sunday), stacked per kind.",
+    read: "Regular short sessions are easier to judge than a few long ones. Empty weeks explain gaps in the other two charts.",
+  },
   "Sessions vs. heart rate": {
     source: "Polar Loop continuous heart rate (one value every ~5 minutes at rest) around each TENS or meditation session, against the 20 minutes before it.",
     read: "A drop during the session suggests a calming effect. Sitting still lowers heart rate by itself, so compare TENS with plain meditation. Needs about 5 sessions per kind before the averages mean much.",
