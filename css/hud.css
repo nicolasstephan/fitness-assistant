@@ -62,3 +62,7 @@
 [data-style="hud"] .supp-chip { font-family: var(--mono); background: transparent; border-color: var(--btn-border); }
 [data-style="hud"] .supp-chip[aria-pressed="true"] { background: transparent; color: var(--text); border-color: var(--text); }
 [data-style="hud"] .checkin-nav strong { font: 600 15px var(--display); letter-spacing: .12em; text-transform: uppercase; }
+/* smallest phones (iPhone SE, 320 px): four section buttons, settings and the sync dot in one row */
+@media (max-width: 360px) {
+  [data-style="hud"] .mode-switch button { padding: 6px 6px; font-size: 12px; letter-spacing: .02em; }
+}

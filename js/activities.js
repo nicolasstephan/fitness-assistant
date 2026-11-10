@@ -1,4 +1,5 @@
-// Other activities (data/sports.js) on the Training tab, combined from three places:
+// Activities (data/sports.js), shown in two places: sports under Exercise > Training > Other activities, resting
+// sessions (TENS, meditation) on the Recover page; one ActivityView each. Combined from these places:
 //   - logged by hand or recorded with Start/Stop (training-log activities), joined with the tracker workout that
 //     overlaps them in time;
 //   - tracker workouts that already name the sport (WHOOP "Skateboarding", Polar "Running", ...);
@@ -145,20 +146,30 @@ export class ActivityView {
    * root: the #activities section; dialog: the "log activity" <dialog>. getLog/saveLog: the training log doc.
    * getTracker(): { source, workouts } or null. onShowSport({ id, sport, title } | null): show a sport's muscles.
    * describeSession(activity): optional one-line heart-rate summary of a resting session (or null).
-   * banner: optional app-wide bar listing the running recordings (shown in every section); onOpen(): go to them.
+   * rest: true = only resting sessions (Recover page), false = only sports (Exercise).
+   * banner: optional app-wide bar listing all running recordings, of both views (give it to one view only);
+   * onOpen(sport): go to the view that lists that activity. The log dialog is shared by both views.
    */
-  constructor(root, dialog, { getLog, saveLog, getTracker, onShowSport, describeSession, banner, onOpen }) {
+  constructor(root, dialog, { rest = false, getLog, saveLog, getTracker, onShowSport, describeSession, banner, onOpen }) {
     Object.assign(this, { root, dialog, getLog, saveLog, getTracker, onShowSport, describeSession, banner, onOpen });
+    this.sports = SPORTS.filter((s) => !!s.rest === rest);
     this.selected = null; // id of the row whose muscles are shown
     this.timer = null;
     root.addEventListener("click", (e) => this.onClick(e));
     root.addEventListener("change", (e) => this.onChange(e));
     banner?.addEventListener("click", (e) => {
-      if (e.target.closest("[data-open-activities]")) return this.onOpen?.();
+      const open = e.target.closest("[data-open-activities]");
+      if (open) return this.onOpen?.(open.dataset.openActivities);
       this.onClick(e);
     });
     this.setupDialog();
   }
+
+  /** An element of this view's section by its role (class "activity-<name>"). */
+  part(name) { return this.root.querySelector(`.activity-${name}`); }
+
+  /** Whether this view lists the activity. */
+  owns(sport) { return this.sports.some((s) => s.id === sport); }
 
   onClick(e) {
     const t = e.target.closest("[data-log-activity],[data-start-pick],[data-start-sport],[data-stop-activity],[data-stop-all],[data-cancel-activity],[data-edit-activity],[data-delete-activity],[data-show-activity]");
@@ -166,7 +177,7 @@ export class ActivityView {
     const log = this.getLog();
     if (t.dataset.logActivity !== undefined) return this.openDialog();
     if (t.dataset.startPick !== undefined) {
-      const pick = this.root.querySelector("#activity-start-pick");
+      const pick = this.part("start-pick");
       pick.hidden = !pick.hidden;
       return;
     }
@@ -176,7 +187,7 @@ export class ActivityView {
       const auto = autoStopFor(t.dataset.startSport);
       const a = { id: newId(), sport: t.dataset.startSport, start: localNow(), end: null, ...(auto ? { autoStopMin: auto } : {}) };
       writeStarted({ ...readStarted(), [a.id]: Date.now() });
-      this.root.querySelector("#activity-start-pick").hidden = true;
+      this.part("start-pick").hidden = true;
       return this.saveLog(normalizeLog({ ...log, activities: [...log.activities, a] }));
     }
     if (t.dataset.stopActivity) return this.stop(log, [t.dataset.stopActivity]);
@@ -269,25 +280,28 @@ export class ActivityView {
     return { start, end: toLocal(endMs) };
   }
 
+  /** Once per dialog (both views share it); its handlers act for the view that opened it (dialog.owner). */
   setupDialog() {
     const d = this.dialog;
-    d.querySelector("[name=sport]").replaceChildren(...SPORTS.map((s) => el("option", { value: s.id, textContent: s.name })));
+    if (d.dataset.ready) return;
+    d.dataset.ready = "1";
     d.querySelector("#activity-cancel").addEventListener("click", () => d.close());
     const showDuration = () => {
-      const t = this.dialogTimes();
+      const t = d.owner.dialogTimes();
       d.querySelector("#activity-duration").textContent = t?.end ? `Duration: ${fmtDuration((toMs(t.end) - toMs(t.start)) / MIN)}` : "";
     };
     d.querySelector("form").addEventListener("input", showDuration);
     d.querySelector("form").addEventListener("submit", (e) => {
       e.preventDefault();
-      const times = this.dialogTimes();
+      const self = d.owner;
+      const times = self.dialogTimes();
       if (!times) {
         d.querySelector("#activity-error").textContent = "Enter date, start and end time.";
         return;
       }
-      const log = this.getLog();
+      const log = self.getLog();
       const sport = d.querySelector("[name=sport]").value;
-      const old = this.editing;
+      const old = self.editing;
       if (old) {
         if (!old.end && toMs(times.start) > toMs(localNow())) {
           d.querySelector("#activity-error").textContent = "The start can't be in the future.";
@@ -295,24 +309,29 @@ export class ActivityView {
         }
         forgetStarted([old.id]); // the edited start replaces this device's exact start
         const a = { ...old, sport, ...times };
-        this.saveLog(normalizeLog({ ...log, activities: log.activities.map((x) => (x.id === old.id ? a : x)) }));
+        self.saveLog(normalizeLog({ ...log, activities: log.activities.map((x) => (x.id === old.id ? a : x)) }));
       } else {
-        this.saveLog(normalizeLog({ ...log, activities: [...log.activities, { id: newId(), sport, ...times }] }));
+        self.saveLog(normalizeLog({ ...log, activities: [...log.activities, { id: newId(), sport, ...times }] }));
       }
       d.close();
     });
-    this.showDuration = showDuration;
+    d.showDuration = showDuration;
   }
 
   /** New entry (an hour, just finished) or, with an activity, edit its sport and times. */
   openDialog(activity = null) {
     const d = this.dialog;
+    d.owner = this;
     this.editing = activity;
     const running = activity && !activity.end;
+    // only this view's activities (an entry being edited keeps its own, even from the other kind)
+    const choices = activity && !this.owns(activity.sport) ? [...this.sports, sportById.get(activity.sport)].filter(Boolean) : this.sports;
+    d.querySelector("[name=sport]").replaceChildren(...choices.map((s) => el("option", { value: s.id, textContent: s.name })));
     const start = activity?.start ?? toLocal(toMs(localNow()) - 60 * MIN);
     const end = activity?.end ?? localNow();
-    d.querySelector("#activity-dialog-title").textContent = activity ? (running ? "Edit start" : "Edit activity") : "Log activity";
-    d.querySelector("[name=sport]").value = activity?.sport ?? d.querySelector("[name=sport]").value;
+    const noun = this.sports.every((s) => s.rest) ? "session" : "activity";
+    d.querySelector("#activity-dialog-title").textContent = activity ? (running ? "Edit start" : `Edit ${noun}`) : `Log ${noun}`;
+    d.querySelector("[name=sport]").value = activity?.sport ?? this.sports[0].id;
     d.querySelector("[name=date]").value = start.slice(0, 10);
     d.querySelector("[name=time]").value = start.slice(11);
     const endField = d.querySelector("[name=endTime]");
@@ -320,27 +339,32 @@ export class ActivityView {
     endField.required = !running;
     endField.closest("label").hidden = running;
     d.querySelector("#activity-error").textContent = "";
-    this.showDuration();
+    d.showDuration();
     d.showModal();
   }
 
   // ---------- rendering
 
-  /** One block per running recording (several can run together); "Stop all" when more than one runs. Also the app banner. */
-  renderRunning(running) {
-    const bar = this.root.querySelector("#activity-running");
+  /**
+   * One block per running recording of this view (several can run together); "Stop all" when more than one runs.
+   * The app banner (if this view has it) lists every running recording, sports and resting sessions.
+   */
+  renderRunning(all) {
+    const running = all.filter((a) => this.owns(a.sport));
+    const bar = this.part("running");
     clearInterval(this.timer);
     bar.hidden = !running.length;
-    if (this.banner) this.banner.hidden = !running.length;
-    if (!running.length) {
-      this.banner?.replaceChildren();
-      return bar.replaceChildren();
+    if (this.banner) {
+      this.banner.hidden = !all.length;
+      if (!all.length) this.banner.replaceChildren();
     }
+    if (!running.length) bar.replaceChildren();
+    if (!running.length && !(this.banner && all.length)) return;
     const started = readStarted();
-    const clocks = running.map((a) => ({ els: [], startMs: startMsOf(a, started) }));
-    const clock = (i, className) => {
+    const clocks = new Map(all.map((a) => [a.id, { els: [], startMs: startMsOf(a, started) }]));
+    const clock = (a, className) => {
       const e = el("strong", { className });
-      clocks[i].els.push(e);
+      clocks.get(a.id).els.push(e);
       return e;
     };
     const stopsAt = (a) => (a.autoStopMin ? ` · stops ${fmtClock(autoStopMs(a, started))}` : "");
@@ -351,11 +375,11 @@ export class ActivityView {
         el("select", { dataset: { autoStop: a.id }, ariaLabel: "Stop automatically after" },
           ...choices.map((m) => el("option", { value: String(m), textContent: m ? fmtDuration(m) : "off", selected: m === now }))));
     };
-    bar.replaceChildren(
-      ...running.map((a, i) => el("div", { className: "activity-run" },
+    if (running.length) bar.replaceChildren(
+      ...running.map((a) => el("div", { className: "activity-run" },
         el("div", { className: "workout-head" },
           el("span", { className: "workout-live", textContent: `${nameOf(a.sport)} · since ${a.start.slice(11)}${stopsAt(a)}` }),
-          clock(i, "activity-elapsed")),
+          clock(a, "activity-elapsed")),
         el("div", { className: "workout-actions" },
           picker(a),
           el("button", { type: "button", className: "primary-btn", dataset: { stopActivity: a.id }, textContent: "■ Stop" }),
@@ -363,15 +387,16 @@ export class ActivityView {
           el("button", { type: "button", className: "ghost small", dataset: { cancelActivity: a.id }, textContent: "Discard" })))),
       ...(running.length > 1 ? [el("div", { className: "workout-actions" },
         el("button", { type: "button", className: "primary-btn", dataset: { stopAll: "" }, textContent: "■ Stop all" }))] : []));
-    this.banner?.replaceChildren(
-      ...running.map((a, i) => el("div", { className: "running-item" },
-        el("button", { type: "button", className: "running-open", dataset: { openActivities: "" }, title: "Open Other activities" },
+    if (this.banner && all.length) this.banner.replaceChildren(
+      ...all.map((a) => el("div", { className: "running-item" },
+        el("button", { type: "button", className: "running-open", dataset: { openActivities: a.sport },
+          title: sportById.get(a.sport)?.rest ? "Open Recover" : "Open Other activities" },
           el("span", { className: "workout-live", textContent: `${sportById.get(a.sport)?.short ?? nameOf(a.sport)}${stopsAt(a)}` }),
-          clock(i, "running-elapsed")),
+          clock(a, "running-elapsed")),
         el("button", { type: "button", className: "ghost small", dataset: { stopActivity: a.id }, textContent: "■ Stop" }))));
     const tick = () => {
       if (this.checkAutoStops()) return; // saving re-renders
-      for (const c of clocks) {
+      for (const c of clocks.values()) {
         const text = fmtElapsed(Math.max(0, Math.floor((Date.now() - c.startMs) / 1000)));
         for (const e of c.els) e.textContent = text;
       }
@@ -384,13 +409,13 @@ export class ActivityView {
     if (this.checkAutoStops()) return; // stopped while the app was closed: the save renders again
     const log = this.getLog();
     const tracker = this.getTracker();
-    const { activities } = combineActivities(log, tracker?.workouts);
+    const activities = combineActivities(log, tracker?.workouts).activities.filter((a) => this.owns(a.sport));
     this.rows = new Map();
 
     const running = activeActivities(log);
     this.renderRunning(running);
     // the pick stays open for a second activity; one already running can't start again
-    this.root.querySelector("#activity-start-pick").replaceChildren(...SPORTS.map((s) =>
+    this.part("start-pick").replaceChildren(...this.sports.map((s) =>
       el("button", { type: "button", className: "ghost small", dataset: { startSport: s.id }, textContent: s.name,
         disabled: running.some((a) => a.sport === s.id) })));
 
@@ -403,9 +428,9 @@ export class ActivityView {
       t.min += (toMs(a.end) - toMs(a.start)) / MIN;
       totals.set(a.sport, t);
     }
-    this.root.querySelector("#activity-summary").textContent = totals.size
+    this.part("summary").textContent = totals.size
       ? `Last 30 days: ${[...totals].map(([s, t]) => `${sportById.get(s)?.short ?? nameOf(s)} ${t.n}× · ${fmtDuration(t.min)}`).join(" · ")}`
-      : activities.length ? "Nothing in the last 30 days." : "Start or log an activity.";
+      : activities.length ? "Nothing in the last 30 days." : this.sports.every((s) => s.rest) ? "Start or log a session." : "Start or log an activity.";
 
     const trackerLine = (t) => {
       const parts = [t.durationMin != null && `${t.durationMin} min`, t.avgHr && `HR ${t.avgHr} / ${t.maxHr}`,
@@ -413,7 +438,7 @@ export class ActivityView {
       return el("small", { className: "tracker-match", textContent: `${t.source ?? tracker?.source ?? "Tracker"}: ${parts.join(" · ")}` });
     };
 
-    const list = this.root.querySelector("#activity-list");
+    const list = this.part("list");
     list.replaceChildren(...activities.slice(0, LIST_LENGTH).map((a) => {
       const id = a.id ?? `auto:${trackerKey(a.tracker)}`;
       this.rows.set(id, a);
@@ -432,7 +457,7 @@ export class ActivityView {
           el("button", { type: "button", className: "icon-btn", dataset: { editActivity: a.id }, ariaLabel: "Edit activity", title: "Edit times", textContent: "✎" }),
           el("button", { type: "button", className: "icon-btn", dataset: { deleteActivity: a.id }, ariaLabel: "Delete activity", textContent: "×" })]));
     }));
-    const history = this.root.querySelector("#activity-history");
+    const history = this.part("history");
     history.hidden = !activities.length;
     history.querySelector("summary h3").textContent = `History (${activities.length})`;
     if (this.selected && !this.rows.has(this.selected)) this.select(null);

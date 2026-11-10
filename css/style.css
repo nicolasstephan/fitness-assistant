@@ -482,6 +482,8 @@ body:not([data-view="exercise"]) .layout { display: none; }
 /* today: the daily check-in as its own page, one readable column */
 .today { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 16px 32px; }
 .today-inner { max-width: 560px; margin: 0 auto; }
+/* recover: the resting sessions as their own page (same blocks as Other activities, without the divider) */
+.recover .activities { border-top: 0; padding-top: 0; }
 
 .health {
   flex: 1;
@@ -631,7 +633,7 @@ body:not([data-view="exercise"]) .layout { display: none; }
   .panel-head { padding-top: 2px; }
   .appbar { padding: 6px 10px; gap: 8px; }
   .app-title { display: none; } /* the switch is the heading on a phone */
-  .mode-switch button { padding: 6px 14px; }
+  .mode-switch button { padding: 6px 10px; } /* four sections in one row */
   .sync-status { font-size: 0; } /* just the colored dot; tap it for settings */
   .sync-status::before { font-size: 12px; margin: 0; }
   /* the stage is small here: compact overlays, and the model is fitted between them (viewer.setInsets) */
@@ -644,4 +646,9 @@ body:not([data-view="exercise"]) .layout { display: none; }
 /* iOS zooms into any focused field below 16px and stays zoomed */
 @media (pointer: coarse) {
   input, select, textarea { font-size: 16px !important; }
+}
+
+/* smallest phones (iPhone SE, 320 px): four section buttons, settings and the sync dot in one row */
+@media (max-width: 360px) {
+  .mode-switch button { padding: 6px 7px; font-size: 13px; }
 }

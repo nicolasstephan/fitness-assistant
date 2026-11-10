@@ -28,6 +28,7 @@
     <div class="mode-switch" role="tablist" aria-label="Section">
       <button role="tab" data-show="health" aria-selected="true">Health</button>
       <button role="tab" data-show="exercise" aria-selected="false">Exercise</button>
+      <button role="tab" data-show="recover" aria-selected="false">Recover</button>
       <button role="tab" data-show="today" aria-selected="false">Today</button>
     </div>
     <span class="appbar-end">
@@ -110,12 +111,12 @@
               <button type="button" class="ghost small" data-start-pick>▶ Start</button>
             </span>
           </div>
-          <div id="activity-start-pick" class="chips start-pick" hidden></div>
-          <div id="activity-running" class="workout-bar running" hidden></div>
-          <p id="activity-summary" class="hint"></p>
-          <details id="activity-history" class="fold activity-history" hidden>
+          <div class="chips start-pick activity-start-pick" hidden></div>
+          <div class="workout-bar running activity-running" hidden></div>
+          <p class="hint activity-summary"></p>
+          <details class="fold activity-history" hidden>
             <summary><h3>History</h3></summary>
-            <ul id="activity-list" class="list"></ul>
+            <ul class="list activity-list"></ul>
           </details>
         </section>
         <!-- collapsible sections, closed by default -->
@@ -165,6 +166,29 @@
     <p id="health-empty" class="health-empty" hidden></p>
     <section id="health-tiles" class="tiles"></section>
     <div id="health-cards"></div>
+  </main>
+
+  <!-- recover: resting sessions (TENS, meditation), recorded with Start / Stop like the activities -->
+  <main id="recover" class="today recover" hidden>
+    <div class="today-inner">
+      <section id="recovery" class="workout-plans activities">
+        <div class="workout-plans-head">
+          <h3>Resting sessions</h3>
+          <span>
+            <button type="button" class="ghost small" data-log-activity>+ Log</button>
+            <button type="button" class="ghost small" data-start-pick>▶ Start</button>
+          </span>
+        </div>
+        <div class="chips start-pick activity-start-pick" hidden></div>
+        <div class="workout-bar running activity-running" hidden></div>
+        <p class="hint activity-summary"></p>
+        <p class="hint">Each session is compared with your heart rate in the 20 min before (Health &gt; Resting sessions).</p>
+        <details class="fold activity-history" hidden>
+          <summary><h3>History</h3></summary>
+          <ul class="list activity-list"></ul>
+        </details>
+      </section>
+    </div>
   </main>
 
   <main id="checkin" class="today checkin" hidden>

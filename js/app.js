@@ -35,7 +35,7 @@ const viewer = new MuscleViewer($("#viewer"));
 const health = new HealthView($("#health-view"));
 const minuteHr = new MinuteHr(); // Loop heart rate around resting sessions (vagus nerve stimulation, meditation)
 health.setHr(minuteHr);
-health.onHrLoaded = () => activityView.render(); // session rows show their heart rate change
+health.onHrLoaded = () => recoverView.render(); // session rows show their heart rate change
 const state = {
   mine: [], // ids of the user's exercises, in the order added
   exercises: new Set(), // selected (highlighted) exercise ids
@@ -285,16 +285,17 @@ trainingLog.onChange = () => {
   renderMyExercises();
   workoutView.render(); // renderMyExercises -> refresh() already redraws the volume heatmap
   activityView.render();
+  recoverView.render();
   health.setTrainingLog(trainingLog.doc); // manual workouts in the health view
   loadSessionHr();
 };
 
-/** Heart rate of the latest resting sessions, for their rows in Other activities. */
+/** Heart rate of the latest resting sessions, for their rows on the Recover page. */
 function loadSessionHr() {
   const rest = trainingLog.doc.activities.filter((a) => a.end && sportById.get(a.sport)?.rest).slice(-20);
   minuteHr.load(rest, localToday()).then((changed) => {
     if (!changed) return;
-    activityView.render();
+    recoverView.render();
     health.render();
   });
 }
@@ -342,6 +343,7 @@ async function loadHealth(cfg) {
     health.setData(doc);
     workoutView.render(); // tracker matches
     activityView.render();
+    recoverView.render();
     writeLocal(HEALTH_CACHE_KEY, doc);
   } catch (err) {
     health.setMessage(`Could not load health data: ${err.message}`);
@@ -384,19 +386,20 @@ async function syncPolar({ auto = false } = {}) {
 
 $("#polar-sync").addEventListener("click", () => syncPolar());
 
-// ---------- three sections, switched in the app bar: health (dashboard, default) / exercise (3D model + panel) /
-// today (daily check-in)
+// ---------- four sections, switched in the app bar: health (dashboard, default) / exercise (3D model + panel) /
+// recover (resting sessions: TENS, meditation) / today (daily check-in)
 
-const VIEWS = ["health", "exercise", "today"];
+const VIEWS = ["health", "exercise", "recover", "today"];
 
 function showView(view) {
   document.body.dataset.view = view;
   $("#health-view").hidden = view !== "health";
+  $("#recover").hidden = view !== "recover";
   $("#checkin").hidden = view !== "today";
   document.querySelectorAll("[data-show]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.show === view)));
   if (view === "health") health.render();
   else if (view === "today") checkin.render(); // its charts are sized from the page, so draw once visible
-  else updateInsets(); // the stage was hidden: fit the model now that it has a size
+  else if (view === "exercise") updateInsets(); // the stage was hidden: fit the model now that it has a size
   writeHash();
 }
 
@@ -698,17 +701,16 @@ const checkin = new CheckinView($("#checkin"), {
   editProtocol: () => supplementDialog.open(),
 });
 
-// ---------- other activities (sports), under Training
+// ---------- activities: sports under Exercise > Training, resting sessions on the Recover page
 
 const activityView = new ActivityView($("#activities"), $("#activity-dialog"), {
   getLog: () => trainingLog.doc,
   saveLog: (doc) => trainingLog.update(doc),
   getTracker,
-  // heart rate change of a resting session, once its days are loaded (the health view loads them)
-  describeSession: (a) => describeHr(minuteHr.session(a)),
-  banner: $("#running-banner"),
-  // banner tapped: Exercise > Training, scrolled to Other activities
-  onOpen: () => {
+  banner: $("#running-banner"), // lists the running recordings of both views
+  // banner tapped: the page that lists that recording (Recover, or Exercise > Training > Other activities)
+  onOpen: (sport) => {
+    if (sportById.get(sport)?.rest) return showView("recover");
     showView("exercise");
     selectTab("exercises");
     $("#activities").scrollIntoView({ block: "start", behavior: "smooth" });
@@ -723,6 +725,15 @@ const activityView = new ActivityView($("#activities"), $("#activity-dialog"), {
     }
     refresh();
   },
+});
+
+const recoverView = new ActivityView($("#recovery"), $("#activity-dialog"), {
+  rest: true,
+  getLog: () => trainingLog.doc,
+  saveLog: (doc) => trainingLog.update(doc),
+  getTracker,
+  // heart rate change of a resting session, once its days are loaded (the health view loads them)
+  describeSession: (a) => describeHr(minuteHr.session(a)),
 });
 
 // ---------- sync settings dialog
@@ -807,6 +818,7 @@ const cachedHealth = readLocal(HEALTH_CACHE_KEY, null);
 if (cachedHealth) health.setData(cachedHealth);
 workoutView.render(); // after the health cache, so tracker matches show right away
 activityView.render();
+recoverView.render();
 const syncCfg = readLocal(SYNC_KEY, null);
 if (syncCfg) {
   connectGitHub(syncCfg).catch((err) => {
