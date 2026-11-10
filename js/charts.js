@@ -49,6 +49,8 @@ function timeTicks(t0, t1, width) {
     for (let t = t0; t <= t1; t += DAY) ticks.push(t);
     const perDay = width / (span + 1);
     if (perDay >= 48) return { ticks, fmt: (t) => fmtDate(t, { weekday: "short", day: "numeric" }) };
+    // phone: too tight even turned: day numbers in two staggered rows, the month under them
+    if (perDay < 11) return { ticks, stagger: true, fmt: (t) => `${new Date(t).getUTCDate()}` };
     return { ticks, rotate: perDay >= 16 ? -45 : -90, fmt: (t) => fmtDate(t, { day: "numeric", month: "short" }) };
   }
   // short ranges: labels on Mondays, so they sit on the week lines of dayGrid
@@ -62,18 +64,37 @@ function timeTicks(t0, t1, width) {
  * (the plot itself keeps its height). xOf(t) -> x pixel of the label.
  */
 function drawTimeLabels(svg, tt, xOf, width, height) {
+  const base = height - PAD.bottom;
+  const grow = (extra) => {
+    svg.setAttribute("height", height + extra);
+    svg.setAttribute("viewBox", `0 0 ${width} ${height + extra}`);
+  };
+  const cls = (t) => (new Date(t).getUTCDay() === 1 ? "tick small monday" : "tick small");
+  if (tt.stagger) {
+    grow(14);
+    tt.ticks.forEach((t, i) => {
+      svgEl("text", { x: xOf(t), y: base + (i % 2 ? 21 : 11), class: cls(t), "text-anchor": "middle" }, svg).textContent = tt.fmt(t);
+    });
+    // month at the start (unless a 1st follows within 5 days) and at every 1st
+    tt.ticks.forEach((t, i) => {
+      const day = new Date(t).getUTCDate();
+      const firstSoon = tt.ticks.slice(1, 6).some((u) => new Date(u).getUTCDate() === 1);
+      if (day === 1 || (i === 0 && !firstSoon)) {
+        svgEl("text", { x: xOf(t) - 3, y: base + 34, class: "tick small" }, svg).textContent = fmtDate(t, { month: "short" });
+      }
+    });
+    return;
+  }
   if (!tt.rotate) {
     for (const t of tt.ticks) svgEl("text", { x: xOf(t), y: height - 6, class: "tick", "text-anchor": "middle" }, svg).textContent = tt.fmt(t);
     return;
   }
-  const extra = tt.rotate === -90 ? 26 : 18;
-  svg.setAttribute("height", height + extra);
-  svg.setAttribute("viewBox", `0 0 ${width} ${height + extra}`);
-  const y = height - PAD.bottom + 8;
+  grow(tt.rotate === -90 ? 26 : 18);
+  const y = base + 8;
   for (const t of tt.ticks) {
     const x = xOf(t);
     const label = svgEl("text", {
-      x, y, class: new Date(t).getUTCDay() === 1 ? "tick small monday" : "tick small",
+      x, y, class: cls(t),
       "text-anchor": "end", "dominant-baseline": tt.rotate === -90 ? "middle" : "auto",
       transform: `rotate(${tt.rotate} ${x} ${y})`,
     }, svg);
