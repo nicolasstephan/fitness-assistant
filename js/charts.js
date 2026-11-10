@@ -44,16 +44,41 @@ function timeTicks(t0, t1, width) {
     const every = Math.ceil(ticks.length / maxTicks);
     return { ticks: ticks.filter((_, i) => i % every === 0), fmt: (t) => fmtDate(t, { month: "short" }) };
   }
-  // up to two weeks: a label per day, or every other day if they don't fit
-  if (span <= 14) {
-    const step = span + 1 <= maxTicks ? 1 : 2;
-    for (let t = t0; t <= t1; t += step * DAY) ticks.push(t);
-    return { ticks, fmt: (t) => fmtDate(t, { weekday: "short", day: "numeric" }) };
+  // up to a month (7 and 30 day ranges): a label for every day; turned 45° or 90° when they don't fit side by side
+  if (span <= 31) {
+    for (let t = t0; t <= t1; t += DAY) ticks.push(t);
+    const perDay = width / (span + 1);
+    if (perDay >= 48) return { ticks, fmt: (t) => fmtDate(t, { weekday: "short", day: "numeric" }) };
+    return { ticks, rotate: perDay >= 16 ? -45 : -90, fmt: (t) => fmtDate(t, { day: "numeric", month: "short" }) };
   }
   // short ranges: labels on Mondays, so they sit on the week lines of dayGrid
   const weeks = [1, 2, 3, 4].find((w) => span / (7 * w) <= maxTicks) ?? 4;
   for (let t = MONDAY(t0); t <= t1; t += weeks * 7 * DAY) ticks.push(t);
   return { ticks, fmt: (t) => fmtDate(t, { day: "numeric", month: "short" }) };
+}
+
+/**
+ * Date labels under the plot. Turned labels hang below the axis, so the svg grows by `extra` px there
+ * (the plot itself keeps its height). xOf(t) -> x pixel of the label.
+ */
+function drawTimeLabels(svg, tt, xOf, width, height) {
+  if (!tt.rotate) {
+    for (const t of tt.ticks) svgEl("text", { x: xOf(t), y: height - 6, class: "tick", "text-anchor": "middle" }, svg).textContent = tt.fmt(t);
+    return;
+  }
+  const extra = tt.rotate === -90 ? 26 : 18;
+  svg.setAttribute("height", height + extra);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height + extra}`);
+  const y = height - PAD.bottom + 8;
+  for (const t of tt.ticks) {
+    const x = xOf(t);
+    const label = svgEl("text", {
+      x, y, class: new Date(t).getUTCDay() === 1 ? "tick small monday" : "tick small",
+      "text-anchor": "end", "dominant-baseline": tt.rotate === -90 ? "middle" : "auto",
+      transform: `rotate(${tt.rotate} ${x} ${y})`,
+    }, svg);
+    label.textContent = tt.fmt(t);
+  }
 }
 
 /**
@@ -228,10 +253,7 @@ export function lineChart(container, points, opts) {
   drawGaps(svg, opts.gaps, x, width, height);
   dayGrid(svg, t0, t1, x, height);
   drawMarks(svg, opts.marks, x, width, height);
-  const tt = timeTicks(t0, t1, width - PAD.left - PAD.right);
-  for (const t of tt.ticks) {
-    svgEl("text", { x: x(t), y: height - 6, class: "tick", "text-anchor": "middle" }, svg).textContent = tt.fmt(t);
-  }
+  drawTimeLabels(svg, timeTicks(t0, t1, width - PAD.left - PAD.right), x, width, height);
 
   const pathOf = (ps) => {
     let d = "";
@@ -353,11 +375,8 @@ export function stackedColumns(container, rows, series, opts) {
   const xBand = (t) => PAD.left + band / 2 + ((t - t0) / (t1 - t0 || 1)) * (band * (rows.length - 1));
   drawGaps(svg, opts.gaps, xBand, width, height);
   drawMarks(svg, opts.marks, xBand, width, height);
-  const tt = timeTicks(t0, t1, plotW);
-  for (const t of tt.ticks) {
-    const i = Math.round(((t - t0) / (t1 - t0 || 1)) * (rows.length - 1));
-    svgEl("text", { x: xCenter(i), y: height - 6, class: "tick", "text-anchor": "middle" }, svg).textContent = tt.fmt(t);
-  }
+  const colOf = (t) => xCenter(Math.round(((t - t0) / (t1 - t0 || 1)) * (rows.length - 1)));
+  drawTimeLabels(svg, timeTicks(t0, t1, plotW), colOf, width, height);
 
   rows.forEach((row, i) => {
     const g = svgEl("g", { class: "col" }, svg);
