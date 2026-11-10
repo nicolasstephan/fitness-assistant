@@ -9,12 +9,13 @@
 import { normalizeLog, newId, localNow, activeActivities } from "./training-log.js";
 import { trackerEnd } from "./workouts.js";
 import { SPORTS, sportById, sportOfTracker } from "./data/sports.js";
+import { fillHistory } from "./history.js";
 
 const MIN = 60000;
 const DAY = 86400000;
 const TOLERANCE = 15 * MIN;
 const SUMMARY_DAYS = 30;
-const LIST_LENGTH = 20;
+const LIST_LENGTH = 30;
 const STARTED_KEY = "fa.activityStartedAt"; // { id: ms } exact start of a recording (the log keeps minutes)
 const AUTO_KEY = "fa.activityAutoStop"; // { sport: minutes } last auto-stop chosen per activity on this device (0 = off)
 const AUTO_CHOICES = [0, 10, 15, 20, 30, 45, 60, 90, 120];
@@ -151,9 +152,12 @@ export class ActivityView {
    * rest: true = only resting sessions (Recover page), false = only sports (Exercise).
    * banner: optional app-wide bar listing all running recordings, of both views (give it to one view only);
    * onOpen(sport): go to the view that lists that activity. The log dialog is shared by both views.
+   * history: optional shared History fold outside root (Exercise: with the strength workouts, history.js);
+   * without it the rows go into the section's own .activity-history fold.
    */
-  constructor(root, dialog, { rest = false, getLog, saveLog, getTracker, onShowSport, describeSession, sessionSpark, sessionDetail, banner, onOpen }) {
-    Object.assign(this, { root, dialog, getLog, saveLog, getTracker, onShowSport, describeSession, sessionSpark, sessionDetail, banner, onOpen });
+  constructor(root, dialog, { rest = false, history = null, getLog, saveLog, getTracker, onShowSport, describeSession, sessionSpark, sessionDetail, banner, onOpen }) {
+    Object.assign(this, { root, dialog, history, getLog, saveLog, getTracker, onShowSport, describeSession, sessionSpark, sessionDetail, banner, onOpen });
+    history?.addEventListener("click", (e) => this.onClick(e));
     this.expanded = null; // id of the resting session whose large heart-rate chart is open
     this.sports = SPORTS.filter((s) => !!s.rest === rest);
     this.selected = null; // id of the row whose muscles are shown
@@ -267,7 +271,9 @@ export class ActivityView {
   /** Highlight a row's sport on the model (null clears; also called by the app when another selection takes over). */
   select(id, row = null) {
     this.selected = id;
-    this.root.querySelectorAll("[data-show-activity]").forEach((li) => li.classList.toggle("active", li.dataset.showActivity === id));
+    for (const r of [this.root, this.history].filter(Boolean)) {
+      r.querySelectorAll("[data-show-activity]").forEach((li) => li.classList.toggle("active", li.dataset.showActivity === id));
+    }
     if (id === null) return this.onShowSport?.(null);
     const sport = sportById.get(row.sport);
     const minutes = (toMs(row.end) - toMs(row.start)) / MIN;
@@ -446,9 +452,8 @@ export class ActivityView {
       return el("small", { className: "tracker-match", textContent: `${t.source ?? tracker?.source ?? "Tracker"}: ${parts.join(" · ")}` });
     };
 
-    const list = this.part("list");
     let detail = null; // the open session's chart, drawn once the list is in the page
-    list.replaceChildren(...activities.slice(0, LIST_LENGTH).flatMap((a) => {
+    const items = activities.slice(0, LIST_LENGTH).flatMap((a) => {
       const id = a.id ?? `auto:${trackerKey(a.tracker)}`;
       this.rows.set(id, a);
       const rest = sportById.get(a.sport)?.rest;
@@ -462,7 +467,7 @@ export class ActivityView {
         hr ? el("small", { className: "tracker-match", textContent: hr })
           : a.tracker ? trackerLine(a.tracker) : el("small", { textContent: rest ? "No heart rate yet" : "No tracker data" }));
       const li = el("li", { className: [id === this.selected || open ? "active" : "", rest ? "rest" : "", spark ? "has-hr" : ""].join(" ").trim(),
-        dataset: { showActivity: id }, title: rest ? (spark ? "Show the heart rate" : "") : "Show the muscles this trains" },
+        dataset: { showActivity: id, start: a.start }, title: rest ? (spark ? "Show the heart rate" : "") : "Show the muscles this trains" },
         text,
         ...(spark ? [spark] : []),
         ...(a.auto ? [] : [
@@ -471,12 +476,16 @@ export class ActivityView {
       if (!open) return [li];
       detail = { el: el("div", { className: "session-chart" }), a };
       return [li, el("li", { className: "session-detail" }, detail.el)];
-    }));
+    });
+    if (this.history) fillHistory(this.history, "activity", items, activities.length);
+    else {
+      this.part("list").replaceChildren(...items);
+      const history = this.part("history");
+      history.hidden = !activities.length;
+      history.querySelector("summary h3").textContent = `History (${activities.length})`;
+    }
     if (detail) this.sessionDetail?.(detail.el, detail.a);
     else this.expanded = null;
-    const history = this.part("history");
-    history.hidden = !activities.length;
-    history.querySelector("summary h3").textContent = `History (${activities.length})`;
     if (this.selected && !this.rows.has(this.selected)) this.select(null);
   }
 }

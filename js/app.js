@@ -707,6 +707,7 @@ const checkin = new CheckinView($("#checkin"), {
 // ---------- activities: sports under Exercise > Training, resting sessions on the Recover page
 
 const activityView = new ActivityView($("#activities"), $("#activity-dialog"), {
+  history: $("#exercise-history"), // one History with the strength workouts
   getLog: () => trainingLog.doc,
   saveLog: (doc) => trainingLog.update(doc),
   getTracker,

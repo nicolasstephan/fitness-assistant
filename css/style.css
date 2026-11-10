@@ -381,6 +381,7 @@ dialog input {
 .workout-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .primary-btn.small { padding: 6px 12px; font-size: 14px; }
 .workout-history li { cursor: default; }
+.exercise-history li[data-show-activity] { cursor: pointer; }
 .workout-history small.tracker-match { color: var(--text); opacity: 0.75; }
 
 .checkin-supp { padding: 10px 0; border-bottom: 1px solid var(--border); }

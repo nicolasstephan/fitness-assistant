@@ -114,10 +114,6 @@
           <div class="chips start-pick activity-start-pick" hidden></div>
           <div class="workout-bar running activity-running" hidden></div>
           <p class="hint activity-summary"></p>
-          <details class="fold activity-history" hidden>
-            <summary><h3>History</h3></summary>
-            <ul class="list activity-list"></ul>
-          </details>
         </section>
         <!-- collapsible sections, closed by default -->
         <details id="my-exercises-section" class="fold">
@@ -132,8 +128,9 @@
             <ul id="exercise-list" class="list"></ul>
           </div>
         </details>
-        <details id="workout-history" class="fold workout-history" hidden>
-          <summary><h3>Workout history</h3></summary>
+        <!-- strength workouts and other activities in one list, newest first (history.js) -->
+        <details id="exercise-history" class="fold workout-history exercise-history" hidden>
+          <summary><h3>History</h3></summary>
           <ul class="list"></ul>
         </details>
       </div>

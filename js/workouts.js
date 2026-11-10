@@ -1,6 +1,7 @@
 // Workouts: plans (templates of exercises with sets), timed workouts started from a plan or free,
 // a set checklist while running, and the muscles a workout trained.
 // Finished workouts are matched with tracker workouts (WHOOP, Polar) by overlapping time.
+import { fillHistory } from "./history.js";
 import { activeWorkout, dailyProgress, describeSets, localNow, newId, normalizeLog } from "./training-log.js";
 import { lineChart } from "./charts.js";
 import { suggestNextPlan, VOLUME_TARGET } from "./volume.js";
@@ -60,7 +61,7 @@ function withoutWorkout(log, id) {
 
 export class WorkoutView {
   /**
-   * root: the exercises tab (contains #workout-bar, #workout-plans, #workout-history).
+   * root: the exercises tab (contains #workout-bar, #workout-plans, #exercise-history).
    * planDialog: the plan editor <dialog>. getLog/saveLog: the training log doc. exerciseById: catalog.
    * getMine(): ids of "my exercises" (listed first in the plan editor).
    * getTracker(): { source, workouts } or null. onShowMuscles(workoutId): highlight a workout on the model.
@@ -421,13 +422,13 @@ export class WorkoutView {
     return { plan: s.plan, why };
   }
 
+  /** The latest finished workouts in the shared History (with the other activities, history.js). */
   renderHistory(log) {
-    const section = this.root.querySelector("#workout-history");
-    const finished = log.workouts.filter((w) => w.end).slice(-10).reverse();
-    section.hidden = !finished.length;
+    const all = log.workouts.filter((w) => w.end);
+    const finished = all.slice(-30).reverse();
     const tracker = this.getTracker();
-    section.querySelector("ul").replaceChildren(
-      ...finished.map((w) => {
+    fillHistory(this.root.querySelector("#exercise-history"), "workout",
+      finished.map((w) => {
         const text = el("div", { className: "li-text" },
           // title, then when on its own line (a combined line wrapped over 3-4 lines on a phone)
           el("span", { textContent: w.name || "Free workout" }),
@@ -439,10 +440,10 @@ export class WorkoutView {
             match.avgHr && `HR ${match.avgHr} / ${match.maxHr}`, match.kcal != null && `${Math.round(match.kcal)} kcal`].filter(Boolean);
           text.appendChild(el("small", { className: "tracker-match", textContent: `${match.source ?? tracker.source}: ${parts.join(" · ")}` }));
         }
-        return el("li", {}, text,
+        return el("li", { dataset: { start: w.start } }, text,
           el("button", { type: "button", className: "ghost small", dataset: { showWorkout: w.id }, textContent: "Muscles" }),
           el("button", { type: "button", className: "icon-btn", dataset: { deleteWorkout: w.id }, ariaLabel: "Delete workout", textContent: "×" }));
       }),
-    );
+      all.length);
   }
 }
