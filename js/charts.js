@@ -46,10 +46,14 @@ function timeTicks(t0, t1, width) {
   }
   // up to a month (7 and 30 day ranges): a label for every day; turned 45° or 90° when they don't fit side by side
   if (span <= 31) {
-    for (let t = t0; t <= t1; t += DAY) ticks.push(t);
     const perDay = width / (span + 1);
+    // the very narrowest phones (iPhone SE, 30 days): every other day, or the numbers touch
+    const step = perDay < 8 ? 2 : 1;
+    for (let t = t0; t <= t1; t += step * DAY) ticks.push(t);
     if (perDay >= 48) return { ticks, fmt: (t) => fmtDate(t, { weekday: "short", day: "numeric" }) };
-    // phone: too tight even turned: day numbers in two staggered rows, the month under them
+    // a week on a phone: weekday over the day number, both flat
+    if (perDay >= 26) return { ticks, twoLine: true, fmt: (t) => `${new Date(t).getUTCDate()}`, sub: (t) => fmtDate(t, { weekday: "short" }) };
+    // phone, a month: turned day numbers only, the month under them
     if (perDay < 11) return { ticks, stagger: true, fmt: (t) => `${new Date(t).getUTCDate()}` };
     return { ticks, rotate: perDay >= 16 ? -45 : -90, fmt: (t) => fmtDate(t, { day: "numeric", month: "short" }) };
   }
@@ -70,17 +74,28 @@ function drawTimeLabels(svg, tt, xOf, width, height) {
     svg.setAttribute("viewBox", `0 0 ${width} ${height + extra}`);
   };
   const cls = (t) => (new Date(t).getUTCDay() === 1 ? "tick small monday" : "tick small");
+  if (tt.twoLine) {
+    grow(12);
+    for (const t of tt.ticks) {
+      svgEl("text", { x: xOf(t), y: base + 13, class: cls(t), "text-anchor": "middle" }, svg).textContent = tt.sub(t);
+      svgEl("text", { x: xOf(t), y: base + 26, class: cls(t), "text-anchor": "middle" }, svg).textContent = tt.fmt(t);
+    }
+    return;
+  }
   if (tt.stagger) {
-    grow(14);
+    grow(10);
+    // one turned day number per day line: on its side a two-digit number is only ~8 px wide
+    for (const t of tt.ticks) {
+      const x = xOf(t), y = base + 5;
+      svgEl("text", { x, y, class: `${cls(t)} tiny`, "text-anchor": "end", "dominant-baseline": "central", transform: `rotate(-90 ${x} ${y})` }, svg).textContent = tt.fmt(t);
+    }
+    // month at the start (unless a new month begins within 5 days) and where each new month begins
+    const month = (t) => new Date(t).getUTCMonth();
     tt.ticks.forEach((t, i) => {
-      svgEl("text", { x: xOf(t), y: base + (i % 2 ? 21 : 11), class: cls(t), "text-anchor": "middle" }, svg).textContent = tt.fmt(t);
-    });
-    // month at the start (unless a 1st follows within 5 days) and at every 1st
-    tt.ticks.forEach((t, i) => {
-      const day = new Date(t).getUTCDate();
-      const firstSoon = tt.ticks.slice(1, 6).some((u) => new Date(u).getUTCDate() === 1);
-      if (day === 1 || (i === 0 && !firstSoon)) {
-        svgEl("text", { x: xOf(t) - 3, y: base + 34, class: "tick small" }, svg).textContent = fmtDate(t, { month: "short" });
+      const starts = i > 0 && month(t) !== month(tt.ticks[i - 1]);
+      const soon = tt.ticks.slice(1).some((u) => u - t <= 5 * DAY && month(u) !== month(t));
+      if (starts || (i === 0 && !soon)) {
+        svgEl("text", { x: xOf(t) - 3, y: base + 31, class: "tick small" }, svg).textContent = fmtDate(t, { month: "short" });
       }
     });
     return;

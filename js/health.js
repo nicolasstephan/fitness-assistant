@@ -274,7 +274,8 @@ export class HealthView {
   calendar() {
     const byDate = new Map(this.doc.days.map((d) => [d.date, d]));
     const out = [];
-    const last = Math.max(tUTC(this.doc.days.at(-1).date), tUTC(localToday()));
+    // up to today, never further: Polar files tonight's body-clock bedtime under tomorrow's night
+    const last = tUTC(localToday());
     for (let t = tUTC(this.doc.days[0].date); t <= last; t += DAY) {
       const date = new Date(t).toISOString().slice(0, 10);
       out.push(byDate.get(date) ?? emptyDay(date));
