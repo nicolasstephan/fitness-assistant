@@ -302,6 +302,7 @@ function loadSessionHr() {
 journal.onChange = (doc) => {
   checkin.render();
   health.setJournal(doc);
+  if (document.body.dataset.view === "recover") recoverCharts.render();
 };
 
 const saveMyExercises = () => profile.update({ version: 1, myExercises: state.mine });
@@ -341,6 +342,7 @@ async function loadHealth(cfg) {
     }
     health.setMessage("");
     health.setData(doc);
+    if (document.body.dataset.view === "recover") recoverCharts.render();
     workoutView.render(); // tracker matches
     activityView.render();
     recoverView.render();
@@ -747,6 +749,9 @@ const recoverCharts = new RecoverCharts($("#recover-charts"), {
   getLog: () => trainingLog.doc,
   hr: minuteHr,
   onHrLoaded: () => recoverView.render(),
+  getContext: () => health.recoverContext(),
+  getJournal: () => journal.doc,
+  hint: $("#recover-move"),
 });
 
 // ---------- sync settings dialog

@@ -1,14 +1,20 @@
-// Recover page charts for the resting sessions (vagus nerve stimulation, meditation), from the Loop's minute heart
-// rate (hr.js): the drop per session over time, the average curve per kind, and minutes per week.
+// Recover page cards for the resting sessions (vagus nerve stimulation, meditation, cyclic sighing, resonance
+// breathing): which kind helps most (tension before / after, heart rate, the night after), the drop per session over
+// time and the average curve per kind from the Loop's minute heart rate (hr.js), and minutes per week. Above them a
+// nudge to move: easy cardio is the best-proven way to lower anxiety (moveHint).
 // The rows of the History list get their own small curve in activities.js (sessionSpark / sessionDetail below).
-import { dotChart, offsetChart, stackedColumns } from "./charts.js";
+import { dotChart, offsetChart, stackedColumns, dataTable } from "./charts.js";
+import { OUTCOMES, meanCell, MIN_N } from "./insights.js";
 import { chartCard } from "./health.js";
 import { localToday } from "./checkin.js";
 import { BEFORE_MIN, AFTER_MIN } from "./hr.js";
 import { SPORTS, sportById } from "./data/sports.js";
 
 const DAY = 86400000;
-const ROLLING = 5; // running average over the last 5 sessions of a kind
+const ROLLING = 5;
+const HIGH = 4; // stress (check-in) or tension (sessions) from 4 of 5 counts as high
+const MOVE_CATS = new Set(["Cardio", "Walking"]); // easy cardio: walks, runs, rides, swims ...
+const MOVE_STEPS = 10000; // a day with this many steps counts as moved too // running average over the last 5 sessions of a kind
 export const REST_SPORTS = SPORTS.filter((s) => s.rest);
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -70,14 +76,49 @@ export function sessionDetail(el, a, r) {
   });
 }
 
+const shiftDay = (date, n) => new Date(Date.parse(date) + n * DAY).toISOString().slice(0, 10);
+
+/**
+ * A line above the sessions when moving would help: stress or tension was high lately (check-in stress or a
+ * session's tension before, today or yesterday) and there was no easy cardio for 2 days, or none for 3 days.
+ * Hidden otherwise. Easy cardio: a walk or cardio workout, or a day with 10,000 steps.
+ */
+export function moveHint(el, { ctx, journal, log, today = localToday() }) {
+  el.hidden = true;
+  if (!ctx) return;
+  const steps = new Map(ctx.days.map((d) => [d.date, d.partialDay ? null : d.steps]));
+  const movedOn = (date) => ctx.workouts.some((w) => MOVE_CATS.has(w.cat) && w.start.slice(0, 10) === date) || (steps.get(date) ?? 0) >= MOVE_STEPS;
+  const lastMoved = [0, 1, 2, 3].find((n) => movedOn(shiftDay(today, -n)));
+  const recent = [today, shiftDay(today, -1)];
+  const stress = Math.max(0, ...recent.map((d) => journal?.days?.[d]?.stress ?? 0));
+  const tension = Math.max(0, ...(log?.activities ?? []).filter((a) => recent.includes(a.start.slice(0, 10))).map((a) => a.tensionBefore ?? 0));
+  const high = Math.max(stress, tension) >= HIGH;
+  let text = null;
+  if (high && (lastMoved == null || lastMoved >= 2)) {
+    text = `${stress >= HIGH ? `Stress ${stress} of 5 in the check-in` : `Tension ${tension} of 5 before a session`}, and no walk or easy cardio `
+      + `for ${lastMoved == null ? "3 days or more" : "2 days"}. A 20–30 min easy walk or jog is the best-proven way to lower anxiety; `
+      + "short, easy sessions did best in the studies.";
+  } else if (lastMoved == null) {
+    text = "No walk or easy cardio in the last 3 days. A 20–30 min easy walk or jog lowers stress and anxiety reliably; easy is enough.";
+  }
+  if (!text) return;
+  el.textContent = text;
+  el.hidden = false;
+}
+
 export class RecoverCharts {
-  /** root: the container for the cards. getLog(): the training log. hr: MinuteHr. onHrLoaded(): heart rate came in. */
-  constructor(root, { getLog, hr, onHrLoaded }) {
-    Object.assign(this, { root, getLog, hr, onHrLoaded });
+  /**
+   * root: the container for the cards. getLog(): the training log. hr: MinuteHr. onHrLoaded(): heart rate came in.
+   * getContext(): { days, workouts } from the Health view (days with deviations from normal), or null.
+   * getJournal(): the check-in journal. hint: the element for the nudge to move (moveHint).
+   */
+  constructor(root, { getLog, hr, onHrLoaded, getContext, getJournal, hint }) {
+    Object.assign(this, { root, getLog, hr, onHrLoaded, getContext, getJournal, hint });
     this.pendingDraws = [];
   }
 
   render() {
+    if (this.hint) moveHint(this.hint, { ctx: this.getContext?.(), journal: this.getJournal?.(), log: this.getLog() });
     const sessions = (this.getLog()?.activities ?? [])
       .filter((a) => a.end && sportById.get(a.sport)?.rest)
       .sort((a, b) => b.start.localeCompare(a.start));
@@ -95,10 +136,62 @@ export class RecoverCharts {
     const grid = document.createElement("div");
     grid.className = "cards";
     this.root.append(grid);
+    this.compareCard(grid, rows, kinds);
     this.dropCard(grid, kinds);
     this.curveCard(grid, rows, kinds);
     this.weeksCard(grid, sessions, kinds);
     this.pendingDraws.forEach((draw) => draw());
+  }
+
+  /**
+   * Which kind helps most: per kind the tension change (after minus before), the heart-rate drop, and the night after
+   * the session day vs. your normal; "No session" = days without any resting session since the first one.
+   */
+  compareCard(grid, rows, kinds) {
+    const health = new Map((this.getContext?.()?.days ?? []).map((d) => [d.date, d]));
+    const nightAfter = (date) => health.get(shiftDay(date, 1));
+    const sessionDays = new Set(rows.map((x) => x.a.start.slice(0, 10)));
+    const first = [...sessionDays].sort()[0];
+    const nights = (dates) => [...dates].map(nightAfter).filter(Boolean);
+    const restDays = [];
+    for (let d = first; d < localToday(); d = shiftDay(d, 1)) if (!sessionDays.has(d)) restDays.push(d);
+    const table = [
+      ...kinds.map((k) => {
+        const rated = k.rows.filter((x) => x.a.tensionBefore && x.a.tensionAfter).map((x) => x.a.tensionAfter - x.a.tensionBefore);
+        const hr = k.rows.filter((x) => x.r).map((x) => x.r.dDuring);
+        return {
+          name: k.sport.short ?? k.sport.name, evidence: k.sport.evidence ?? null, n: k.rows.length,
+          rated, hr, nights: nights(new Set(k.rows.map((x) => x.a.start.slice(0, 10)))),
+        };
+      }),
+      { name: "No session", evidence: null, n: null, rated: [], hr: [], nights: nights(restDays) },
+    ];
+    const tensionCell = (r) => {
+      if (!r.rated.length) return null;
+      const m = mean(r.rated);
+      return { text: `${signed(m)} (${r.rated.length})`, cls: Math.abs(m) < 0.3 ? "" : m < 0 ? "good" : "bad" };
+    };
+    const hrCell = (r) => (r.hr.length ? `${signed(mean(r.hr))} bpm (${r.hr.length})` : null);
+    const card = chartCard(this, grid, "Which session helps most",
+      "Per kind: tension after minus before (1–5), heart rate during vs. the 20 min before, and the night after vs. your normal", null);
+    card.classList.add("wide", "insight");
+    const body = card.querySelector(".card-body");
+    body.classList.add("is-table");
+    dataTable(body, [
+      { label: "Kind", get: (r) => r.name },
+      { label: "Evidence", get: (r) => r.evidence },
+      { label: "Sessions", get: (r) => r.n, num: true },
+      { label: "Tension", get: tensionCell, num: true },
+      { label: "HR during", get: hrCell, num: true },
+      { label: "HRV night after", get: (r) => meanCell(r.nights, OUTCOMES.hrv), num: true },
+      { label: "Resting HR", get: (r) => meanCell(r.nights, OUTCOMES.rhr), num: true },
+      { label: "Sleep time", get: (r) => meanCell(r.nights, OUTCOMES.asleep), num: true },
+    ], table);
+    const note = document.createElement("p");
+    note.className = "card-note";
+    note.textContent = `Rate your tension before and after each session: it compares the kinds most fairly. In brackets: rated or measured sessions; `
+      + `night values from ${MIN_N} nights. Evidence: how well studied for stress and anxiety ("i" at ▶ Start).`;
+    card.appendChild(note);
   }
 
   /** Heart rate drop during each session vs. its 20 minutes before, as dots over time; running average per kind. */

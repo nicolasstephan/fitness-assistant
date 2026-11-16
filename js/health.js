@@ -245,6 +245,13 @@ export class HealthView {
     return { days, cur, prev, workouts, prevWorkouts, allWorkouts: all, start, end, gaps: gapsIn(cur) };
   }
 
+  /** For the Recover page: every day with its deviations from normal (dev, hrvDev) and all workouts with category. */
+  recoverContext() {
+    if (!this.doc) return null;
+    const { days, allWorkouts } = this.slice();
+    return { days, workouts: allWorkouts };
+  }
+
   /**
    * Resting sessions as yes/no journal questions on the morning after (that night's HRV carries the wake-up date),
    * from the day after the first session of that kind on, so the "no" nights come from the same period.

@@ -2,6 +2,7 @@
 // tracker: activity names a tracker gives these activities (WHOOP labels, Polar sport names), lowercase.
 // autoStopMin: a recording stops by itself after this many minutes (changeable per recording; 0/absent = off).
 // rest: a resting session (no muscles, not a workout in the Health view); compared with heart rate instead.
+// pace: a breathing guide while it records, [[label, seconds, "in" | "out"], ...] repeated from the start.
 
 export const SPORTS = [
   {
@@ -45,6 +46,7 @@ export const SPORTS = [
     tracker: [],
     rest: true,
     autoStopMin: 45,
+    evidence: "weak", // how well studied for stress and anxiety (info.js has the one-line reason)
   },
   {
     id: "meditation",
@@ -53,6 +55,33 @@ export const SPORTS = [
     secondary: [],
     tracker: ["meditation", "mindfulness", "breathing exercise", "breathwork"],
     rest: true,
+    evidence: "strong",
+  },
+  {
+    // Balban et al. 2023: double inhale through the nose, long exhale through the mouth, 5 min a day
+    id: "sighing",
+    name: "Cyclic sighing",
+    short: "Sighing",
+    primary: [],
+    secondary: [],
+    tracker: [],
+    rest: true,
+    autoStopMin: 5,
+    evidence: "moderate",
+    pace: [["Breathe in", 2, "in"], ["In a little more", 1, "in"], ["Breathe out slowly", 6, "out"]],
+  },
+  {
+    // slow paced breathing near the resonance frequency (HRV biofeedback without the feedback): 6 per minute
+    id: "resonance",
+    name: "Resonance breathing",
+    short: "Resonance",
+    primary: [],
+    secondary: [],
+    tracker: [],
+    rest: true,
+    autoStopMin: 10,
+    evidence: "moderate–good",
+    pace: [["Breathe in", 4, "in"], ["Breathe out", 6, "out"]],
   },
 ];
 

@@ -83,11 +83,11 @@ const INFO = {
     read: "Partial weeks or months at the edges of the range rest on fewer days (see the Days column).",
   },
   "Journal vs. recovery": {
-    source: "Your check-in answers (Today), supplements taken and resting sessions, each paired with the night after: HRV, resting HR and sleep score as the difference from your normal (60 days before, same device), Polar's ANS charge, and how you felt the next day. WHOOP journal answers count too.",
+    source: "Your check-in answers (Today), supplements taken and resting sessions, each paired with the night after: HRV, resting HR and sleep score as the difference from your normal (60 days before, same device), Polar's ANS charge, and how you felt the next day. WHOOP journal answers count only for questions that are still answered (alcohol, supplements); WHOOP-only questions are left out.",
     read: "Each cell is yes-days minus no-days. Green means better after a yes (e.g. HRV higher, resting HR lower), red worse. Look for several columns pointing the same way; one column alone is often noise. Shown from 5 yes and 5 no days.",
   },
   "What makes you tired": {
-    source: "Everything recorded about a day (each sport by name, strength training, long, hard, late or back-to-back workouts, check-in answers, supplements, TENS and meditation, WHOOP journal) and about the night after it (short sleep, low HRV, low Nightly Recharge, late bedtime), against how you felt the next day and the day after. Tired = perceived fitness 1–2 in the check-in, or WHOOP's \"Experienced fatigue?\" before the check-in existed.",
+    source: "Everything recorded about a day (each sport by name, strength training, long, hard, late or back-to-back workouts, check-in answers, supplements, resting sessions) and about the night after it (short sleep, low HRV, low Nightly Recharge, late bedtime), against how you felt the next day and the day after. Tired = perceived fitness 1–2 in the check-in. WHOOP history counts only where it is comparable (workouts, HRV and sleep time vs. that device's normal); WHOOP's fatigue answer and its other journal questions are left out.",
     read: "\"40% vs 15%\" means you were tired on 40% of the days after that factor and on 15% of the days without it. The most tiring factors are at the top. Check both columns: some things (like a long run) tire you most two days later. Needs 5 days with and without a factor.",
   },
   "Late workouts vs. sleep": {
@@ -111,8 +111,28 @@ const INFO = {
     read: "\"r\" is the correlation: around 0 no link, 0.4+ a clear one. If your feeling tracks the numbers, trust either; if not, the mismatch days are the interesting ones (e.g. feeling fine while recovery is low, which often comes before getting ill or overreaching).",
   },
   "Readiness vs. strength": {
-    source: "Every logged exercise compared with its previous session (estimated 1-rep max with weight, best set's reps without), grouped by that morning's Polar Nightly Recharge or WHOOP recovery.",
+    source: "Every logged exercise compared with its previous session (estimated 1-rep max with weight, best set's reps without), grouped by that morning's Polar Nightly Recharge. WHOOP's recovery % is a different score, so sessions before the Loop count as not measured.",
     read: "If sessions on low-readiness mornings are clearly worse, plan heavy days for good mornings and keep low mornings light. If there's no difference, readiness doesn't need to decide your strength days.",
+  },
+  "Vagus nerve stimulation": {
+    source: "A TENS unit on the ear (or neck), meant to stimulate the vagus nerve and calm the nervous system.",
+    read: "Evidence: weak. In sham-controlled studies it did not change heart rate variability (meta-analysis of 16 studies, Wolf 2021); a few small trials report less anxiety. Compare it with plain meditation here to see whether it does anything for you.",
+  },
+  Meditation: {
+    source: "Sitting quietly with attention on the breath or the body, without a pace to follow.",
+    read: "Evidence: strong. An 8-week mindfulness course (MBSR) lowered anxiety as much as the drug escitalopram in a trial of 276 adults (Hoge 2022), with far fewer side effects. It is also the fair comparison for TENS: sitting still lowers heart rate by itself.",
+  },
+  "Cyclic sighing": {
+    source: "Two inhales through the nose (a full one, then a short top-up), then a long, slow exhale through the mouth, for 5 minutes. The guide paces 2 s + 1 s in and 6 s out.",
+    read: "Evidence: moderate. In a one-month trial, 5 minutes a day lifted mood more than mindfulness and slowed breathing at rest; anxiety fell about as much as with mindfulness (Balban 2023). One trial so far.",
+  },
+  "Resonance breathing": {
+    source: "Slow, even breathing at 6 breaths a minute (4 s in, 6 s out), close to the rate at which heart rate and breathing swing together most, for 10 minutes.",
+    read: "Evidence: moderate to good. Breathing at this rate with heart-rate biofeedback clearly lowered stress and anxiety in a meta-analysis of 24 studies (Goessl 2017), mostly small ones. Your own best rate can be 5.5–6.5 a minute.",
+  },
+  "Which session helps most": {
+    source: "Per kind of resting session: your tension rating before and after (1–5), the heart-rate drop during the session (Loop), and the night after compared with your normal (HRV, resting HR, sleep time; 60 days before, same device). \"No session\" = days without any resting session since the first one.",
+    read: "The tension change is the most direct measure: the studies behind these methods mostly measured how people felt. The night columns show whether a session still matters hours later; compare them with the \"No session\" row. Night values need 5 nights per kind.",
   },
   "Heart rate drop per session": {
     source: "Polar Loop continuous heart rate (one value every ~5 minutes at rest): the average during each TENS or meditation session minus the average in the 20 minutes before it. The line is the average of the last 5 sessions of that kind.",

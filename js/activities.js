@@ -10,6 +10,7 @@ import { normalizeLog, newId, localNow, activeActivities } from "./training-log.
 import { trackerEnd } from "./workouts.js";
 import { SPORTS, sportById, sportOfTracker } from "./data/sports.js";
 import { fillHistory } from "./history.js";
+import { infoButton } from "./info.js";
 
 const MIN = 60000;
 const DAY = 86400000;
@@ -18,7 +19,10 @@ const SUMMARY_DAYS = 30;
 const LIST_LENGTH = 30;
 const STARTED_KEY = "fa.activityStartedAt"; // { id: ms } exact start of a recording (the log keeps minutes)
 const AUTO_KEY = "fa.activityAutoStop"; // { sport: minutes } last auto-stop chosen per activity on this device (0 = off)
-const AUTO_CHOICES = [0, 10, 15, 20, 30, 45, 60, 90, 120];
+const AUTO_CHOICES = [0, 5, 10, 15, 20, 30, 45, 60, 90, 120];
+const SKIPPED_KEY = "fa.tensionSkipped"; // ids of resting sessions whose "how tense now?" was skipped on this device
+const RATE_WITHIN = 3 * 60 * MIN; // ask for the tension after a session for this long after its end
+const TENSION = [1, 2, 3, 4, 5];
 
 const toMs = (local) => Date.parse(`${local}:00Z`); // local wall-clock times, compared consistently as "UTC"
 const toLocal = (ms) => new Date(ms).toISOString().slice(0, 16);
@@ -117,6 +121,52 @@ const forgetStarted = (ids) => {
 };
 const readAuto = () => { try { return JSON.parse(localStorage.getItem(AUTO_KEY)) ?? {}; } catch { return {}; } };
 const rememberAuto = (sport, min) => { try { localStorage.setItem(AUTO_KEY, JSON.stringify({ ...readAuto(), [sport]: min })); } catch {} };
+const readSkipped = () => { try { return JSON.parse(localStorage.getItem(SKIPPED_KEY)) ?? []; } catch { return []; } };
+const skipRating = (id) => { try { localStorage.setItem(SKIPPED_KEY, JSON.stringify([...readSkipped(), id].slice(-50))); } catch {} };
+/** "tension 4 → 2" of a resting session, or "" when neither was rated. */
+export const tensionText = (a) => (a.tensionBefore || a.tensionAfter ? `tension ${a.tensionBefore ?? "–"} → ${a.tensionAfter ?? "–"}` : "");
+/** 1–5 buttons; data-<attr> = activity id, data-value = the number. */
+const tensionSeg = (a, attr, value, label) => el("div", { className: "seg tension-seg", role: "group", ariaLabel: label },
+  ...TENSION.map((n) => el("button", { type: "button", dataset: { [attr]: a.id, value: String(n) }, ariaPressed: String(value === n), textContent: String(n) })));
+
+/**
+ * Breathing guide of a running session (sport.pace): a circle that grows while breathing in and shrinks while
+ * breathing out, the phase and its seconds left. update(nowMs) moves it; the phases count from startMs.
+ */
+function paceGuide(pace, startMs) {
+  const lung = el("div", { className: "pace-lung" });
+  const label = el("strong", { className: "pace-label" });
+  const left = el("span", { className: "pace-left" });
+  const root = el("div", { className: "pace-guide" }, el("div", { className: "pace-ring" }, lung), el("div", { className: "pace-text" }, label, left));
+  const cycle = pace.reduce((t, p) => t + p[1], 0);
+  const total = { in: 0, out: 0 };
+  for (const [, sec, dir] of pace) total[dir] += sec;
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let shown = -1;
+  const update = (now) => {
+    let t = ((((now - startMs) / 1000) % cycle) + cycle) % cycle;
+    const done = { in: 0, out: 0 };
+    let i = 0;
+    while (i < pace.length - 1 && t >= pace[i][1]) {
+      t -= pace[i][1];
+      done[pace[i][2]] += pace[i][1];
+      i++;
+    }
+    const [name, sec, dir] = pace[i];
+    // how full the lungs are, 0..1, eased at both ends
+    const f = dir === "in" ? (done.in + t) / total.in : 1 - (done.out + t) / total.out;
+    const eased = (1 - Math.cos(Math.PI * Math.min(1, Math.max(0, f)))) / 2;
+    if (!still) lung.style.transform = `scale(${(0.3 + 0.7 * eased).toFixed(3)})`;
+    if (i !== shown) {
+      shown = i;
+      label.textContent = name;
+      root.dataset.dir = dir;
+    }
+    left.textContent = `${Math.max(1, Math.ceil(sec - t))} s`;
+  };
+  return { root, update };
+}
+
 /** Auto-stop for a new recording: the last one chosen for this activity, else the activity's default. */
 const autoStopFor = (sport) => readAuto()[sport] ?? sportById.get(sport)?.autoStopMin ?? 0;
 /** Exact start of a running recording: this device's if it recorded it, else the log's minute. */
@@ -179,9 +229,24 @@ export class ActivityView {
   owns(sport) { return this.sports.some((s) => s.id === sport); }
 
   onClick(e) {
-    const t = e.target.closest("[data-log-activity],[data-start-pick],[data-start-sport],[data-stop-activity],[data-stop-all],[data-cancel-activity],[data-edit-activity],[data-delete-activity],[data-show-activity]");
+    const t = e.target.closest("[data-log-activity],[data-start-pick],[data-start-sport],[data-stop-activity],[data-stop-all],[data-cancel-activity],[data-edit-activity],[data-delete-activity],[data-show-activity],[data-tension-before],[data-tension-after],[data-skip-rating]");
     if (!t) return;
     const log = this.getLog();
+    if (t.dataset.tensionBefore || t.dataset.tensionAfter) {
+      const key = t.dataset.tensionBefore ? "tensionBefore" : "tensionAfter";
+      const id = t.dataset.tensionBefore ?? t.dataset.tensionAfter;
+      const v = Number(t.dataset.value);
+      // tapping the chosen number again clears it, like the check-in
+      const rate = (x) => {
+        const { [key]: old, ...rest } = x;
+        return old === v ? rest : { ...rest, [key]: v };
+      };
+      return this.saveLog(normalizeLog({ ...log, activities: log.activities.map((x) => (x.id === id ? rate(x) : x)) }));
+    }
+    if (t.dataset.skipRating) {
+      skipRating(t.dataset.skipRating);
+      return this.render();
+    }
     if (t.dataset.logActivity !== undefined) return this.openDialog();
     if (t.dataset.startPick !== undefined) {
       const pick = this.part("start-pick");
@@ -305,6 +370,8 @@ export class ActivityView {
       d.querySelector("#activity-duration").textContent = t?.end ? `Duration: ${fmtDuration((toMs(t.end) - toMs(t.start)) / MIN)}` : "";
     };
     d.querySelector("form").addEventListener("input", showDuration);
+    // the tension fields only for resting sessions
+    d.querySelector("[name=sport]").addEventListener("change", () => d.owner.showTensionFields());
     d.querySelector("form").addEventListener("submit", (e) => {
       e.preventDefault();
       const self = d.owner;
@@ -322,14 +389,35 @@ export class ActivityView {
           return;
         }
         forgetStarted([old.id]); // the edited start replaces this device's exact start
-        const a = { ...old, sport, ...times };
+        const { tensionBefore, tensionAfter, ...plain } = old;
+        const a = { ...plain, sport, ...times, ...self.dialogTension(sport) };
         self.saveLog(normalizeLog({ ...log, activities: log.activities.map((x) => (x.id === old.id ? a : x)) }));
       } else {
-        self.saveLog(normalizeLog({ ...log, activities: [...log.activities, { id: newId(), sport, ...times }] }));
+        self.saveLog(normalizeLog({ ...log, activities: [...log.activities, { id: newId(), sport, ...times, ...self.dialogTension(sport) }] }));
       }
       d.close();
     });
     d.showDuration = showDuration;
+  }
+
+  /** Tension ratings from the dialog (resting sessions only): { tensionBefore?, tensionAfter? }. */
+  dialogTension(sport) {
+    if (!sportById.get(sport)?.rest) return {};
+    const out = {};
+    for (const k of ["tensionBefore", "tensionAfter"]) {
+      const v = Number(this.dialog.querySelector(`[name=${k}]`).value);
+      if (v) out[k] = v;
+    }
+    return out;
+  }
+
+  /** Tension fields only for resting sessions; "after" not while it still records. */
+  showTensionFields() {
+    const d = this.dialog;
+    const rest = !!sportById.get(d.querySelector("[name=sport]").value)?.rest;
+    const running = this.editing && !this.editing.end;
+    d.querySelector("[name=tensionBefore]").closest("label").hidden = !rest;
+    d.querySelector("[name=tensionAfter]").closest("label").hidden = !rest || running;
   }
 
   /** New entry (an hour, just finished) or, with an activity, edit its sport and times. */
@@ -352,6 +440,9 @@ export class ActivityView {
     endField.value = end.slice(11);
     endField.required = !running;
     endField.closest("label").hidden = running;
+    d.querySelector("[name=tensionBefore]").value = String(activity?.tensionBefore ?? "");
+    d.querySelector("[name=tensionAfter]").value = String(activity?.tensionAfter ?? "");
+    this.showTensionFields();
     d.querySelector("#activity-error").textContent = "";
     d.showDuration();
     d.showModal();
@@ -367,6 +458,7 @@ export class ActivityView {
     const running = all.filter((a) => this.owns(a.sport));
     const bar = this.part("running");
     clearInterval(this.timer);
+    cancelAnimationFrame(this.raf);
     bar.hidden = !running.length;
     if (this.banner) {
       this.banner.hidden = !all.length;
@@ -389,11 +481,27 @@ export class ActivityView {
         el("select", { dataset: { autoStop: a.id }, ariaLabel: "Stop automatically after" },
           ...choices.map((m) => el("option", { value: String(m), textContent: m ? fmtDuration(m) : "off", selected: m === now }))));
     };
+    // resting sessions: the tension before, and the breathing guide for the paced kinds
+    const guides = [];
+    const extras = (a) => {
+      const sport = sportById.get(a.sport);
+      if (!sport?.rest) return [];
+      const out = [el("div", { className: "tension-q" },
+        el("span", {}, "Tension before", el("small", { textContent: "1 calm – 5 very tense" })),
+        tensionSeg(a, "tensionBefore", a.tensionBefore, "Tension before"))];
+      if (sport.pace) {
+        const g = paceGuide(sport.pace, startMsOf(a, started));
+        guides.push(g);
+        out.unshift(g.root);
+      }
+      return out;
+    };
     if (running.length) bar.replaceChildren(
       ...running.map((a) => el("div", { className: "activity-run" },
         el("div", { className: "workout-head" },
           el("span", { className: "workout-live", textContent: `${nameOf(a.sport)} · since ${a.start.slice(11)}${stopsAt(a)}` }),
           clock(a, "activity-elapsed")),
+        ...extras(a),
         el("div", { className: "workout-actions" },
           picker(a),
           el("button", { type: "button", className: "primary-btn", dataset: { stopActivity: a.id }, textContent: "■ Stop" }),
@@ -417,6 +525,31 @@ export class ActivityView {
     };
     tick();
     this.timer = setInterval(tick, 1000);
+    if (guides.length) {
+      const frame = () => {
+        if (!guides.some((g) => g.root.isConnected)) return;
+        for (const g of guides) g.update(Date.now());
+        this.raf = requestAnimationFrame(frame);
+      };
+      frame();
+    }
+  }
+
+  /** "How tense are you now?" for this view's resting sessions that ended in the last 3 hours without a rating. */
+  renderRating(log) {
+    const box = this.part("rate");
+    if (!box) return;
+    const skipped = new Set(readSkipped());
+    const now = toMs(localNow());
+    const due = log.activities.filter((a) => a.end && this.owns(a.sport) && sportById.get(a.sport)?.rest && !a.tensionAfter
+      && !skipped.has(a.id) && now - toMs(a.end) <= RATE_WITHIN); // a 1-min session stopped early ends just after now
+    box.hidden = !due.length;
+    box.replaceChildren(...due.map((a) => el("div", { className: "tension-q" },
+      el("span", {}, "How tense are you now?",
+        el("small", { textContent: `${sportById.get(a.sport).short ?? nameOf(a.sport)} ended ${a.end.slice(11)}${a.tensionBefore ? ` · before: ${a.tensionBefore}` : ""} · 1 calm – 5 very tense` })),
+      el("span", { className: "tension-actions" },
+        tensionSeg(a, "tensionAfter", null, "Tension after"),
+        el("button", { type: "button", className: "ghost small", dataset: { skipRating: a.id }, textContent: "Skip" })))));
   }
 
   render() {
@@ -429,9 +562,14 @@ export class ActivityView {
     const running = activeActivities(log);
     this.renderRunning(running);
     // the pick stays open for a second activity; one already running can't start again
-    this.part("start-pick").replaceChildren(...this.sports.map((s) =>
-      el("button", { type: "button", className: "ghost small", dataset: { startSport: s.id }, textContent: s.name,
-        disabled: running.some((a) => a.sport === s.id) })));
+    // resting kinds carry an "i" with how well studied they are (info.js, keyed by name)
+    this.part("start-pick").replaceChildren(...this.sports.map((s) => {
+      const b = el("button", { type: "button", className: "ghost small", dataset: { startSport: s.id }, textContent: s.name,
+        disabled: running.some((a) => a.sport === s.id) });
+      const info = s.rest ? infoButton(s.name) : null;
+      return info ? el("span", { className: "start-choice" }, b, info) : b;
+    }));
+    this.renderRating(log);
 
     // last 30 days per activity
     const since = toMs(localNow()) - SUMMARY_DAYS * DAY;
@@ -463,7 +601,7 @@ export class ActivityView {
       const open = spark && id === this.expanded;
       const text = el("div", { className: "li-text" },
         el("span", { textContent: nameOf(a.sport) }),
-        el("small", { className: "when", textContent: `${fmtDay(a.start)} · ${a.start.slice(11)}–${a.end.slice(11)} · ${fmtDuration(minutes)}` }),
+        el("small", { className: "when", textContent: [`${fmtDay(a.start)} · ${a.start.slice(11)}–${a.end.slice(11)} · ${fmtDuration(minutes)}`, rest && tensionText(a)].filter(Boolean).join(" · ") }),
         hr ? el("small", { className: "tracker-match", textContent: hr })
           : a.tracker ? trackerLine(a.tracker) : el("small", { textContent: rest ? "No heart rate yet" : "No tracker data" }));
       const li = el("li", { className: [id === this.selected || open ? "active" : "", rest ? "rest" : "", spark ? "has-hr" : ""].join(" ").trim(),

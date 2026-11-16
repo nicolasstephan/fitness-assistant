@@ -165,9 +165,11 @@
     <div id="health-cards"></div>
   </main>
 
-  <!-- recover: resting sessions (TENS, meditation), recorded with Start / Stop like the activities -->
+  <!-- recover: resting sessions (TENS, meditation, breathing), recorded with Start / Stop like the activities -->
   <main id="recover" class="today recover" hidden>
     <div class="today-inner">
+      <!-- a nudge to move when stress is high or there was no easy cardio lately (recover.js moveHint) -->
+      <p id="recover-move" class="move-hint" hidden></p>
       <section id="recovery" class="workout-plans activities">
         <div class="workout-plans-head">
           <h3>Resting sessions</h3>
@@ -178,6 +180,8 @@
         </div>
         <div class="chips start-pick activity-start-pick" hidden></div>
         <div class="workout-bar running activity-running" hidden></div>
+        <!-- "how tense are you now?" after a session ends (activities.js renderRating) -->
+        <div class="workout-bar activity-rate" hidden></div>
         <p class="hint activity-summary"></p>
         <details class="fold activity-history" hidden>
           <summary><h3>History</h3></summary>
@@ -306,6 +310,8 @@
       <label>Date<input name="date" type="date" required></label>
       <label>Start<input name="time" type="time" required></label>
       <label>End<input name="endTime" type="time" required></label>
+      <label>Tension before<select name="tensionBefore"><option value="">–</option><option value="1">1 · calm</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5 · very tense</option></select></label>
+      <label>Tension after<select name="tensionAfter"><option value="">–</option><option value="1">1 · calm</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5 · very tense</option></select></label>
       <p id="activity-duration" class="hint"></p>
       <p class="hint">If your tracker recorded it, its heart rate and calories are added by the time.</p>
       <p id="activity-error" class="sync-error" role="status"></p>

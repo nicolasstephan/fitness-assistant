@@ -5,6 +5,12 @@
 // Outcomes are taken relative to your own normal (60 days before, same device, like the HRV band), so the
 // WHOOP-to-Polar switch and slow drifts don't pass for an effect. The health day d is the night that ends on
 // the morning of d plus the day d itself (check-in "felt", SleepWise alertness).
+//
+// Only WHOOP data that the Polar era has too, or a comparable measure of it, goes in (Nicolas, 2026-11-16): HRV,
+// resting HR and sleep time (each vs. the same device's normal), workouts and their zones, and journal questions
+// that are also answered since Polar (alcohol, supplements). WHOOP-only values (recovery %, sleep performance,
+// journal questions without a check-in counterpart, "Experienced fatigue?") are left out, so the tables describe
+// the present and fill with new days instead of resting on the old WHOOP year.
 import { dataTable } from "./charts.js";
 import { progressMetric } from "./training-log.js";
 import { describeItem } from "./supplements.js";
@@ -27,13 +33,14 @@ const signed = (v, digits = 0, unit = "") => {
 
 /**
  * Per-device deviation from the 60 days before (at least 14 values), in place: d.dev = { hrv, rhr, sleep, asleep }.
- * hrv is the log difference from annotateHrv; sleep is Polar's sleep score or WHOOP's sleep performance.
+ * hrv is the log difference from annotateHrv; sleep is Polar's sleep score only (WHOOP's sleep performance is a
+ * different measure, % of the sleep you needed, so it is not compared with it).
  */
 export function annotateDeviations(days) {
   const src = (d) => d.source ?? "whoop";
   const metrics = {
     rhr: (d) => d.rhr,
-    sleep: (d) => (src(d) === "polar" ? d.sleep?.score : d.sleep?.performance) ?? null,
+    sleep: (d) => (src(d) === "polar" ? d.sleep?.score ?? null : null),
     asleep: (d) => d.sleep?.asleepMin ?? null,
   };
   for (const d of days) d.dev = { hrv: d.hrvDev ?? null };
@@ -50,7 +57,7 @@ export function annotateDeviations(days) {
 }
 
 // what can be compared; relative ones are deviations from your normal, absolute ones plain values
-const OUTCOMES = {
+export const OUTCOMES = {
   hrv: { label: "HRV", get: (d) => d.dev?.hrv, show: (v) => signed(pctLog(v), 0, "%"), size: pctLog, noise: 3, higher: true },
   rhr: { label: "Resting HR", get: (d) => d.dev?.rhr, show: (v) => signed(v, 1, " bpm"), noise: 1, higher: false },
   sleep: { label: "Sleep score", get: (d) => d.dev?.sleep, show: (v) => signed(v, 0, " pts"), noise: 3, higher: true },
@@ -66,7 +73,7 @@ const tone = (o, v) => {
   return Math.abs(s) < o.noise ? "" : (s > 0) === o.higher ? "good" : "bad";
 };
 /** Mean of a group: relative outcomes signed and colored, absolute ones plain. */
-const meanCell = (ds, o) => {
+export const meanCell = (ds, o) => {
   const v = valuesOf(ds, o);
   if (v.length < MIN_N) return null;
   const m = mean(v);
@@ -125,6 +132,14 @@ function tableCard(view, parent, { title, sub, columns, rows, empty, notes = [],
 const outcomeColumns = (keys, cell, label = (o) => o.label) =>
   keys.map((k) => ({ label: label(OUTCOMES[k]), get: (r) => cell(r, OUTCOMES[k], k), num: true }));
 const NOISE_NOTE = "Associations, not causes. Values need at least 5 days per group; small differences are noise.";
+const COMPARABLE_NOTE = "WHOOP history counts only where Polar has the same measure (HRV, resting HR, sleep time, workouts) or the question is still asked.";
+
+/** Journal questions that are also answered on Polar days; WHOOP-only questions would only describe the old year. */
+export function comparableQuestions(days) {
+  const qs = new Set();
+  for (const d of days) if (d.source === "polar") for (const q of Object.keys(d.journal ?? {})) qs.add(q);
+  return qs;
+}
 
 // ---------- 1. journal answers vs. the night after
 
@@ -134,10 +149,12 @@ const NOISE_NOTE = "Associations, not causes. Values need at least 5 days per gr
  */
 export function journalCard(view, parent, { days }) {
   const keys = ["hrv", "rhr", "sleep", "ans", "felt"];
+  const comparable = comparableQuestions(days);
   const questions = new Map();
   for (const d of days) {
     if (!keys.some((k) => OUTCOMES[k].get(d) != null)) continue;
     for (const [q, yes] of Object.entries(d.journal ?? {})) {
+      if (!comparable.has(q)) continue;
       if (!questions.has(q)) questions.set(q, { q, yes: [], no: [] });
       questions.get(q)[yes ? "yes" : "no"].push(d);
     }
@@ -161,18 +178,17 @@ export function journalCard(view, parent, { days }) {
     ],
     rows,
     empty: "Not enough answers yet: a question needs at least 5 yes and 5 no days.",
-    notes: [NOISE_NOTE + " Caffeine days may also be short-sleep days, and so on."],
+    notes: [NOISE_NOTE + " Caffeine days may also be short-sleep days, and so on.", COMPARABLE_NOTE],
   });
 }
 
 // ---------- what makes you tired: factors on a day (or the night after it) vs. feeling 1 and 2 days later
 
-const FATIGUE_Q = "Experienced fatigue?"; // WHOOP journal, answered the morning after
 const SHORT_NIGHT = -45; // min vs. your normal
 /**
  * Every factor is pinned to a calendar day x: what you did that day, or the night after it (the health day x+1).
- * Outcomes on x+1 ("next day") and x+2: perceived fitness (check-in) and tired yes/no (check-in 1-2, before the
- * check-in WHOOP's fatigue answer).
+ * Outcomes on x+1 ("next day") and x+2: perceived fitness (check-in) and tired yes/no (check-in 1-2). WHOOP's
+ * "Experienced fatigue?" answer is not used: Polar has no counterpart, and it made the card a review of the old year.
  */
 export function tirednessCard(view, parent, { days, workouts }) {
   const health = new Map(days.map((d) => [d.date, d]));
@@ -180,8 +196,7 @@ export function tirednessCard(view, parent, { days, workouts }) {
   const felt = (date) => health.get(date)?.felt ?? null;
   const tired = (date) => {
     const f = felt(date);
-    if (f != null) return f <= 2;
-    return night(date)?.journal?.[FATIGUE_Q] ?? null;
+    return f == null ? null : f <= 2;
   };
   // workouts per day: what (strength, or the sport by name), minutes, hard minutes, last end
   const byDay = new Map();
@@ -228,14 +243,13 @@ export function tirednessCard(view, parent, { days, workouts }) {
       test: (x) => { const n = night(x); return n?.sleep?.onset && n.bedtime ? onsetMin(n) > n.bedtime.gateEnd + 60 : null; },
     },
   ];
-  // journal answers about day x (check-in, supplements, resting sessions, WHOOP journal), except the outcome itself
-  const questions = new Set();
-  for (const d of days) for (const q of Object.keys(d.journal ?? {})) if (q !== FATIGUE_Q) questions.add(q);
-  for (const q of questions) {
+  // journal answers about day x (check-in, supplements, resting sessions), only questions still asked since Polar
+  for (const q of comparableQuestions(days)) {
     factors.push({ group: "Journal", label: q.replace(/ the day before\?$/, "?"), test: (x) => night(x)?.journal?.[q] ?? null });
   }
 
-  const dates = days.map((d) => d.date);
+  // only days followed by a check-in answer count, so factors from the WHOOP year alone don't fill the table
+  const dates = days.map((d) => d.date).filter((x) => felt(shift(x, 1)) != null || felt(shift(x, 2)) != null);
   const rows = factors.map((f) => {
     const yes = [], no = [];
     for (const x of dates) {
@@ -282,9 +296,9 @@ export function tirednessCard(view, parent, { days, workouts }) {
     empty: "Not enough days yet: answer perceived fitness in the daily check-in.",
     notes: [
       top.length ? `Most tiring so far: ${top.join(", ")}.` : null,
-      "Tired = perceived fitness 1–2 in the check-in; before the check-in, WHOOP's \"Experienced fatigue?\" answer. "
-        + "In brackets: how many days after a yes had an answer. \"Felt\" uses the check-in only. "
+      "Tired = perceived fitness 1–2 in the check-in. In brackets: how many days after a yes had an answer. "
         + "\"Night after\" factors are the night between the day and the next morning. " + NOISE_NOTE,
+      COMPARABLE_NOTE,
     ],
   });
 }
@@ -448,11 +462,8 @@ const READINESS = [
   { label: "Low", id: "low" },
   { label: "Not measured", id: null },
 ];
-const readinessOf = (d) => {
-  if (d?.recharge != null) return d.recharge >= 5 ? "good" : d.recharge === 4 ? "ok" : "low";
-  if (d?.recovery != null) return d.recovery >= 67 ? "good" : d.recovery >= 34 ? "ok" : "low";
-  return null;
-};
+// Nightly Recharge only: WHOOP's recovery % is a different score with no Polar counterpart
+const readinessOf = (d) => (d?.recharge == null ? null : d.recharge >= 5 ? "good" : d.recharge === 4 ? "ok" : "low");
 export function readinessStrengthCard(view, parent, { days, log }) {
   const health = new Map(days.map((d) => [d.date, d]));
   const byExercise = new Map();
@@ -471,7 +482,7 @@ export function readinessStrengthCard(view, parent, { days, log }) {
   const share = (g, test) => `${Math.round((g.changes.filter(test).length / g.changes.length) * 100)}%`;
   tableCard(view, parent, {
     title: "Readiness vs. strength",
-    sub: "Each logged exercise against its previous session, by that morning's Nightly Recharge (or WHOOP recovery)",
+    sub: "Each logged exercise against its previous session, by that morning's Nightly Recharge (Polar)",
     columns: [
       { label: "Readiness", get: (g) => g.label },
       { label: "Sessions", get: (g) => g.changes.length, num: true },
@@ -490,7 +501,7 @@ export function readinessStrengthCard(view, parent, { days, log }) {
     rows,
     empty: "Needs exercises logged at least twice.",
     notes: [
-      "Good = Nightly Recharge good or very good (WHOOP: recovery ≥ 67%); OK = OK (34–66%); Low = compromised or worse (< 34%).",
+      "Good = Nightly Recharge good or very good; OK = OK; Low = compromised or worse. Sessions before the Loop count as not measured (WHOOP's recovery % is not comparable).",
       "Change: estimated 1-rep max for exercises with weight, best set's reps for bodyweight ones. Progress over time also raises the numbers, so compare the rows with each other. " + NOISE_NOTE,
     ],
   });

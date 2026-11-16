@@ -5,7 +5,8 @@
 //             (i = index of the planned set it ticks off)
 //   activities: [{ id, sport, start, end, tracker? }]   other activities (data/sports.js); tracker = key of the tracker
 //             workout it was labeled from ("polar:YYYY-MM-DDTHH:MM", see trackerKey); end null while recording;
-//             autoStopMin = stops by itself that many minutes after the start (running only)
+//             autoStopMin = stops by itself that many minutes after the start (running only);
+//             tensionBefore / tensionAfter = resting sessions: how tense you felt, 1 (calm) to 5 (very tense)
 //   ignored:  [trackerKey]   tracker workouts marked "none of these" in the activity list
 import { lineChart } from "./charts.js";
 
@@ -46,6 +47,8 @@ function normalizeActivity(a) {
   // planned length of a recording: it stops by itself after this many minutes (kept only while it runs)
   const auto = Math.round(Number(a.autoStopMin));
   if (running && auto >= 1 && auto <= 24 * 60) out.autoStopMin = auto;
+  // resting sessions: how tense you felt before and after, 1 (calm) to 5 (very tense)
+  for (const k of ["tensionBefore", "tensionAfter"]) if (Number.isInteger(a[k]) && a[k] >= 1 && a[k] <= 5) out[k] = a[k];
   return out;
 }
 
