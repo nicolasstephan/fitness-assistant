@@ -64,7 +64,7 @@ const INFO = {
   },
   "Strength (this week)": {
     source: "Logged strength workouts in the last 7 days. Graph: sessions per day, last 14 days.",
-    read: "Guideline: strength training on 2 or more days a week. Sets per muscle are in Exercise > Volume.",
+    read: "Your goal: 5 sessions a week (the health guideline's minimum is 2). Sets per muscle are in Exercise > Volume.",
   },
   "HRV (this week)": {
     source: "Polar: heart rate variability (RMSSD) over the first ~4 h of last night's sleep; resting HR from the same window. Graph: last 14 nights, shaded = your normal range (60 nights before, ±0.5 SD).",

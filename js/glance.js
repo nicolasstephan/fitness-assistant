@@ -1,7 +1,7 @@
 // Health > top: the five numbers that matter most, as a quick look at this week (not the selected range).
 // Each tile: the value, how it stands against a target or your normal, and a 14-day mini graph.
 //   1 Active minutes: minutes at 60%+ of max HR, last 7 days, vs. 150 (WHO: 150 min moderate a week)
-//   2 Strength: sessions in the last 7 days, vs. 2 (WHO: 2+ days a week)
+//   2 Strength: sessions in the last 7 days, vs. 5 (Nicolas' goal; WHO minimum: 2 days a week)
 //   3 HRV: last night vs. your normal range (60 nights before, ±0.5 SD, as in the HRV card), resting HR below
 //   4 Cardio load: last 7 days vs. your weekly average of the last 28 days (acute:chronic)
 //   5 Steps: average of the last 7 full days vs. 7,000 a day
@@ -9,7 +9,7 @@ import { infoButton } from "./info.js";
 
 const DAY = 86400000;
 const SPAN = 14; // days in the mini graphs
-const ACTIVE_GOAL = 150, STRENGTH_GOAL = 2, STEPS_FLOOR = 7000;
+const ACTIVE_GOAL = 150, STRENGTH_GOAL = 5, STEPS_FLOOR = 7000;
 const HRV_SWC = 0.5;
 
 const el = (tag, props = {}, ...kids) => {
@@ -95,7 +95,7 @@ export function renderGlance(root, { days, workouts, today }) {
   const str7 = sum(str.slice(-7));
   tiles.push({
     label: "Strength", value: `${str7}`, unit: "×",
-    status: str7 >= STRENGTH_GOAL ? ["✓ 2 or more", "good"] : [`${STRENGTH_GOAL - str7} more for 2`, ""],
+    status: str7 >= STRENGTH_GOAL ? [`✓ ${STRENGTH_GOAL} or more`, "good"] : [`${STRENGTH_GOAL - str7} more for ${STRENGTH_GOAL}`, ""],
     graph: spark(str),
   });
 
