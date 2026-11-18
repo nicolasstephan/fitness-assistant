@@ -412,6 +412,11 @@ def build():
         "range": {"from": ordered[0]["date"], "to": ordered[-1]["date"]},
         "days": ordered, "workouts": workouts,
     }
+    # max and resting HR as set in Polar Flow: the app derives zones and load for sessions the Loop did not record
+    pi = h.get("physicalInfo") or {}
+    if pi.get("maximum_heart_rate") and pi.get("resting_heart_rate"):
+        doc["physical"] = {"maxHr": pi["maximum_heart_rate"], "restHr": pi["resting_heart_rate"],
+                           "female": pi.get("gender") == "FEMALE"}
     # keep the old timestamp when nothing changed, so an idle sync makes no commit
     old = json.loads(OUT.read_text(encoding="utf-8")) if OUT.exists() else {}
     same = {**old, "importedAt": None} == doc

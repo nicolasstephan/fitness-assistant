@@ -114,3 +114,43 @@ export function describeHr(r) {
   return `HR ${Math.round(r.before)} before → ${Math.round(r.during)} during (${signed(r.dDuring)})`
     + (r.after != null ? ` · ${Math.round(r.after)} after (${signed(r.dAfter)})` : "");
 }
+
+// ---------- exercise from the Loop's minute heart rate, for logged sessions the Loop did not record as a workout
+// (Polar only gives zones and cardio load for sessions started on the Loop; without one, a logged boxing round
+// would have no heart-rate data at all)
+
+/**
+ * physical: { maxHr, restHr, female } (Polar physical info). Banister TRIMP per minute with the reserve fraction
+ * x = (HR - rest) / (max - rest): x · 0.64 · e^(1.92 x) (women: 0.86 · e^(1.67 x)). Polar's cardio load is
+ * TRIMP-based too, so the numbers are close in size but not identical.
+ */
+const trimpRate = (v, { maxHr, restHr, female }) => {
+  const x = Math.min(1, Math.max(0, (v - restHr) / (maxHr - restHr)));
+  return female ? x * 0.86 * Math.exp(1.67 * x) : x * 0.64 * Math.exp(1.92 * x);
+};
+export const MIN_EXERCISE_SAMPLES = 3;
+
+/**
+ * A logged session (start, end local "YYYY-MM-DDTHH:MM") as a tracker workout from minute HR, or null with fewer
+ * than 3 values in it. zones = % of the values in zones 1-5 (50-60 ... 90-100% of max HR), like Polar's workouts;
+ * cardioLoad = mean TRIMP rate × minutes, so 5-minute gaps at rest don't shrink it.
+ */
+export function exerciseFromHr(hr, a, physical) {
+  if (!physical?.maxHr || !physical?.restHr || physical.maxHr <= physical.restHr) return null;
+  const s = toMinutes(a.start), e = toMinutes(a.end);
+  const pts = hr.values(s, e).map((p) => p.v);
+  if (pts.length < MIN_EXERCISE_SAMPLES) return null;
+  const zones = [0, 0, 0, 0, 0];
+  for (const v of pts) {
+    const z = Math.floor(((v / physical.maxHr) * 100 - 50) / 10);
+    if (z >= 0) zones[Math.min(4, z)]++;
+  }
+  const minutes = e - s;
+  return {
+    source: "Loop HR", start: a.start, end: a.end, durationMin: minutes,
+    avgHr: Math.round(mean(pts)), maxHr: Math.max(...pts), kcal: null, strain: null,
+    zones: zones.map((n) => Math.round((1000 * n) / pts.length) / 10),
+    cardioLoad: Math.round(mean(pts.map((v) => trimpRate(v, physical))) * minutes * 10) / 10,
+    samples: pts.length, fromMinuteHr: true,
+  };
+}

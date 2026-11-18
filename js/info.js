@@ -55,8 +55,28 @@ const INFO = {
     read: "The scale rises steeply: 10 is a moderate day, 14+ strenuous, 18+ very hard. Compare with your recovery: high strain on low-recovery days is where overreaching starts.",
   },
   "Cardio load": {
-    source: "Polar. Training impulse (TRIMP): time spent at each heart rate, weighted by intensity, summed over the day. Days the Loop did not cover in full are left out.",
+    source: "Training impulse (TRIMP): time spent at each heart rate, weighted by intensity, summed over the day. Polar computes it only for sessions started on the Loop. For sessions you log here (boxing, strength) and did not start on the Loop, the app computes it from the Loop's minute heart rate and your max and resting heart rate in Polar, on days Polar has no load of its own (so nothing counts twice). Days the Loop did not cover in full are left out.",
     read: "A number per day; higher means more cardiovascular strain. Useful as a trend: steady weekly load builds fitness, sudden jumps raise the risk of fatigue.",
+  },
+  "Exercise / week": {
+    source: "Strength workouts and sports you logged, plus tracker workouts nobody logged; resting sessions (TENS, meditation, breathing) don't count. Average per week over the last 4 weeks.",
+    read: "The arrow compares with the 4 weeks before (±10% counts as steady). Health guidelines: 150–300 min of moderate or 75–150 min of vigorous activity a week.",
+  },
+  "Sessions / week": {
+    source: "Every logged workout or sport session and every unlogged tracker workout, per week over the last 4 weeks.",
+    read: "Regularity matters more than single big days: 3–5 sessions a week spread the load and keep the habit.",
+  },
+  "Strength / week": {
+    source: "Logged strength workouts (sessions, not minutes), per week over the last 4 weeks.",
+    read: "Guidelines: strength training for all major muscle groups on 2 or more days a week. The sets per muscle are above.",
+  },
+  "60%+ max HR / week": {
+    source: "Minutes per week in heart-rate zones 2–5 (60% of max HR and up) during sessions with heart rate: Loop workouts, or the Loop's minute heart rate during a logged session. Sessions without heart rate add nothing.",
+    read: "A rough stand-in for moderate-to-vigorous minutes, the measure behind the 150-minute guideline. Lower than your exercise minutes when some sessions had no heart rate.",
+  },
+  "Cardio load / week": {
+    source: "The daily cardio load (Health > Activity) summed per week, averaged over the last 4 weeks; full days only.",
+    read: "How hard the heart worked in total. Raise it gradually: more than about 10–30% above the previous weeks is where fatigue and injuries become likelier.",
   },
   Steps: {
     source: "Polar Loop's motion sensor. Days the Loop did not cover from midnight to midnight are left out.",

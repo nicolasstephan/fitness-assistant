@@ -691,3 +691,9 @@ body:not([data-view="exercise"]) .layout { display: none; }
 @media (max-width: 360px) {
   .mode-switch button { padding: 6px 7px; font-size: 13px; }
 }
+
+/* Exercise > Volume: activity statistics under the sets */
+.exercise-stats .tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin: 8px 0 12px; }
+.exercise-stats .tile-value { font-size: 22px; }
+.exercise-stats .card { margin: 4px 0 8px; }
+.exercise-stats .vol-h:first-child { margin-top: 0; }

@@ -8,6 +8,7 @@
 // joinLog() is shared with the Health view, which lists manual workouts and activities with their tracker data.
 import { normalizeLog, newId, localNow, activeActivities } from "./training-log.js";
 import { trackerEnd } from "./workouts.js";
+import { exerciseFromHr } from "./hr.js";
 import { SPORTS, sportById, sportOfTracker } from "./data/sports.js";
 import { fillHistory } from "./history.js";
 import { infoButton } from "./info.js";
@@ -97,6 +98,30 @@ export function combinedWorkouts(log, trackerWorkouts) {
     }).filter((t) => !sportOfTracker(t.activity)?.rest),
   ].sort((a, b) => a.start.localeCompare(b.start));
 }
+
+/**
+ * Logged strength workouts and sports (not resting sessions) that no tracker workout covers, as tracker workouts
+ * from the Loop's minute heart rate (hr.js exerciseFromHr); the ones without enough heart rate are left out.
+ * The join (joinLog) then pairs each with its own log entry.
+ */
+export function hrWorkouts(log, trackerWorkouts, hr, physical) {
+  if (!log || !physical) return [];
+  const { activities, workouts } = joinLog(log, trackerWorkouts);
+  const planName = (w) => w.name ?? log.plans.find((p) => p.id === w.planId)?.name ?? "Strength training";
+  return [
+    ...workouts.filter((w) => !w.tracker).map((w) => [w, planName(w)]),
+    ...activities.filter((a) => a.end && !a.tracker && !sportById.get(a.sport)?.rest).map((a) => [a, nameOf(a.sport)]),
+  ].map(([x, activity]) => {
+    const t = exerciseFromHr(hr, x, physical);
+    return t && { ...t, activity };
+  }).filter(Boolean).sort((a, b) => a.start.localeCompare(b.start));
+}
+
+/** Logged sessions that are exercise (strength workouts, sports), for loading their heart-rate days. */
+export const exerciseSessions = (log) => [
+  ...log.workouts.filter((w) => w.end),
+  ...log.activities.filter((a) => a.end && !sportById.get(a.sport)?.rest),
+];
 
 /**
  * All activities, newest first: [{ id?, sport, start, end, tracker?, auto? }] (auto = from a tracker workout

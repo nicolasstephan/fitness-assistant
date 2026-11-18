@@ -92,6 +92,7 @@ export function mergeHealthDocs(docs) {
     sources: docs.map(sourceOf),
     importedAt: docs.map((d) => d.importedAt).sort().at(-1),
     range: { from: days[0].date, to: days.at(-1).date },
+    physical: docs.map((d) => d.physical).find(Boolean) ?? null, // max / resting HR (Polar)
     days,
     workouts: docs.flatMap((d) => d.workouts.map((w) => ({ ...w, source: d.source }))).sort((a, b) => (a.start ?? "").localeCompare(b.start ?? "")),
   };
@@ -193,6 +194,24 @@ export class HealthView {
     this.render();
   }
 
+  /**
+   * Workouts made from the Loop's minute heart rate for logged sessions the Loop did not record (hr.js
+   * exerciseFromHr). They join the tracker workouts, and their load is added to the day's Polar cardio load.
+   */
+  setHrWorkouts(list) {
+    const key = JSON.stringify(list);
+    if (key === this.hrWorkoutsKey) return false;
+    this.hrWorkoutsKey = key;
+    this.hrWorkouts = list;
+    this.render();
+    return true;
+  }
+
+  /** Tracker workouts plus the ones from minute heart rate. */
+  trackerWorkouts() {
+    return [...(this.doc?.workouts ?? []), ...(this.hrWorkouts ?? [])];
+  }
+
   setMessage(text) {
     const el = this.root.querySelector("#health-empty");
     el.textContent = text;
@@ -201,6 +220,8 @@ export class HealthView {
 
   /** Days in the selected range, plus the equally long period before it (for deltas). */
   slice() {
+    const hrLoad = new Map(); // date -> cardio load of the sessions from minute heart rate
+    for (const w of this.hrWorkouts ?? []) if (w.cardioLoad) hrLoad.set(w.start.slice(0, 10), (hrLoad.get(w.start.slice(0, 10)) ?? 0) + w.cardioLoad);
     const days = this.calendar().map((d) => {
       // a health day is the night ending that morning: the check-in and supplements of the day before act on it
       // (WHOOP's journal already sits on the night after, its answers are about the previous day)
@@ -208,6 +229,8 @@ export class HealthView {
       return {
         ...d,
         t: tUTC(d.date),
+        // only on days Polar has no load: a Polar load can already include the session (e.g. a deleted detection)
+        ...(hrLoad.has(d.date) && d.cardioLoad === 0 ? { cardioLoad: hrLoad.get(d.date), cardioLoadHr: hrLoad.get(d.date) } : {}),
         // assumed supplement intake < real WHOOP journal answers < explicit check-in answers
         journal: this.journal
           ? {
@@ -232,7 +255,7 @@ export class HealthView {
     const covered = (ds) => ds.filter(hasData).length;
     // both periods need data on at least half their days, e.g. not right after the import stopped
     const prev = covered(cur) >= cur.length / 2 && covered(prevDays) >= covered(cur) / 2 ? prevDays : [];
-    const all = (this.log ? combinedWorkouts(this.log, this.doc.workouts) : this.doc.workouts)
+    const all = (this.log ? combinedWorkouts(this.log, this.trackerWorkouts()) : this.trackerWorkouts())
       .filter((w) => w.start)
       .map((w) => ({ ...w, cat: WORKOUT_CATEGORIES[categoryIndex(w)].label }));
     const workouts = all
@@ -695,7 +718,7 @@ export class HealthView {
     }
 
     if (fromWhoop) lineCard(activityGroup, "Day strain", "WHOOP strain, 0–21", (d) => d.strain, { ticks: [0, 7, 14, 21], tickFormat: (v) => `${v}`, format: (v) => v.toFixed(1) }, "Strain", oneDecimal(""), null);
-    if (cur.some((d) => d.cardioLoad != null)) lineCard(activityGroup, "Cardio load", "Polar daily cardio load (TRIMP-based), full days only", fullDay((d) => d.cardioLoad), { format: (v) => v.toFixed(0), columns: true }, "Cardio load", round(""), null);
+    if (cur.some((d) => d.cardioLoad != null)) lineCard(activityGroup, "Cardio load", "Per day, TRIMP-based: Polar's for sessions started on the Loop; on days without one, logged sessions from the Loop's minute heart rate; full days only", fullDay((d) => d.cardioLoad), { format: (v) => v.toFixed(0), columns: true }, "Cardio load", round(""), null);
     if (cur.some((d) => d.steps != null)) lineCard(activityGroup, "Steps", "Per day, Polar, full days only", fullDay((d) => d.steps), { unit: "steps", format: (v) => Math.round(v).toLocaleString(), tickFormat: (v) => (v >= 1000 ? `${v / 1000}k` : `${v}`), columns: true }, "Steps", round("steps"), true);
 
     // workouts by activity (hours), top 6 + Other

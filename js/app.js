@@ -8,7 +8,8 @@ import { LogDialog, normalizeLog, mergeLogs, lastSessionText } from "./training-
 import { CheckinView, normalizeJournal, mergeJournals, localToday } from "./checkin.js";
 import { weeklySets, volumeColors, workoutMuscles, VOLUME_BINS, VOLUME_TARGET } from "./volume.js";
 import { WorkoutView } from "./workouts.js";
-import { ActivityView } from "./activities.js";
+import { ActivityView, hrWorkouts, exerciseSessions } from "./activities.js";
+import { ExerciseStats } from "./exercise-stats.js";
 import { MinuteHr, describeHr } from "./hr.js";
 import { RecoverCharts, sessionSpark, sessionDetail } from "./recover.js";
 import { sportById } from "./data/sports.js";
@@ -34,6 +35,7 @@ document.addEventListener("input", (e) => {
 
 const viewer = new MuscleViewer($("#viewer"));
 const health = new HealthView($("#health-view"));
+const exerciseStats = new ExerciseStats($("#exercise-stats"), { getContext: () => health.recoverContext(), today: () => localToday() });
 const minuteHr = new MinuteHr(); // Loop heart rate around resting sessions (vagus nerve stimulation, meditation)
 const state = {
   mine: [], // ids of the user's exercises, in the order added
@@ -287,17 +289,33 @@ trainingLog.onChange = () => {
   recoverView.render();
   if (document.body.dataset.view === "recover") recoverCharts.render();
   health.setTrainingLog(trainingLog.doc); // manual workouts in the health view
+  updateHrWorkouts();
   loadSessionHr();
 };
 
-/** Heart rate of the latest resting sessions, for their rows on the Recover page. */
+/**
+ * Heart rate of the latest resting sessions (their rows on the Recover page) and of the logged exercise sessions
+ * (zones and load where the Loop recorded no workout, see updateHrWorkouts).
+ */
 function loadSessionHr() {
   const rest = trainingLog.doc.activities.filter((a) => a.end && sportById.get(a.sport)?.rest).slice(-20);
-  minuteHr.load(rest, localToday()).then((changed) => {
+  const exercise = exerciseSessions(trainingLog.doc).sort((a, b) => a.start.localeCompare(b.start)).slice(-60);
+  minuteHr.load([...rest, ...exercise], localToday()).then((changed) => {
     if (!changed) return;
+    updateHrWorkouts();
     recoverView.render();
     if (document.body.dataset.view === "recover") recoverCharts.render();
   });
+}
+
+/** Logged exercise without a Loop workout: heart rate, zones and load from the Loop's minute heart rate. */
+function updateHrWorkouts() {
+  if (!health.doc) return;
+  const changed = health.setHrWorkouts(hrWorkouts(trainingLog.doc, health.doc.workouts, minuteHr, health.doc.physical));
+  if (!changed) return;
+  workoutView.render();
+  activityView.render();
+  if (state.tab === "volume" && document.body.dataset.view === "exercise") showVolume();
 }
 journal.onChange = (doc) => {
   checkin.render();
@@ -342,6 +360,7 @@ async function loadHealth(cfg) {
     }
     health.setMessage("");
     health.setData(doc);
+    updateHrWorkouts();
     if (document.body.dataset.view === "recover") recoverCharts.render();
     workoutView.render(); // tracker matches
     activityView.render();
@@ -602,6 +621,7 @@ function showVolume() {
   };
   const box = $("#volume-summary");
   box.replaceChildren(
+    el("h3", { className: "vol-h", textContent: "Sets per muscle" }),
     el("p", { className: "hint", textContent: trained.length
       ? "Hard sets per muscle group, last 7 days. Secondary muscles count half a set; target 10–20 per week."
       : "No sets logged in the last 7 days." }),
@@ -615,6 +635,7 @@ function showVolume() {
     box.append(el("h3", { className: "vol-h", textContent: `Below ${VOLUME_TARGET[0]} sets` }),
       el("p", { className: "hint", textContent: below.map((g) => groupById.get(g)?.label ?? g).join(", ") }));
   }
+  exerciseStats.render();
   $("#info").hidden = true;
 }
 
@@ -670,7 +691,7 @@ const logDialog = new LogDialog($("#log-dialog"), {
 const TRACKER_NAMES = { whoop: "WHOOP", polar: "Polar" };
 const getTracker = () => health.doc ? {
   source: TRACKER_NAMES[health.doc.source] ?? "Tracker",
-  workouts: health.doc.workouts.map((w) => ({ ...w, source: TRACKER_NAMES[w.source ?? health.doc.source] ?? w.source })),
+  workouts: health.trackerWorkouts().map((w) => ({ ...w, source: TRACKER_NAMES[w.source ?? health.doc.source] ?? w.source })),
 } : null;
 
 const workoutView = new WorkoutView($("#exercises-tab"), $("#plan-dialog"), {
@@ -837,7 +858,10 @@ renderMyExercises();
 health.setJournal(journal.doc);
 health.setTrainingLog(trainingLog.doc);
 const cachedHealth = readLocal(HEALTH_CACHE_KEY, null);
-if (cachedHealth) health.setData(cachedHealth);
+if (cachedHealth) {
+  health.setData(cachedHealth);
+  updateHrWorkouts(); // from the heart-rate days cached in this browser
+}
 workoutView.render(); // after the health cache, so tracker matches show right away
 activityView.render();
 recoverView.render();
