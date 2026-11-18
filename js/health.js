@@ -3,6 +3,7 @@ import { lineChart, stackedColumns, hBars, dataTable, linearTrend } from "./char
 import { checkinQuestions, supplementQuestions, localToday } from "./checkin.js";
 import { versionOn } from "./supplements.js";
 import { combinedWorkouts } from "./activities.js";
+import { renderGlance } from "./glance.js";
 import { SPORTS, sportById } from "./data/sports.js";
 import { infoButton } from "./info.js";
 import {
@@ -338,6 +339,7 @@ export class HealthView {
 
     this.renderRecharge();
     const s = this.slice();
+    renderGlance(this.root.querySelector("#health-glance"), { days: s.days, workouts: s.allWorkouts, today: localToday() });
     this.renderTiles(s);
     this.renderCards(s);
   }

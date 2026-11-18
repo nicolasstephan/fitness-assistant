@@ -66,3 +66,6 @@
 @media (max-width: 360px) {
   [data-style="hud"] .mode-switch button { padding: 6px 6px; font-size: 12px; letter-spacing: .02em; }
 }
+[data-style="hud"] .glance-tile .tile-label { font-size: 10.5px; letter-spacing: .05em; }
+[data-style="hud"] .glance-tile .tile-value { font-size: 24px; }
+[data-style="hud"] .glance-head { font: 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; }

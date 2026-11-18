@@ -697,3 +697,18 @@ body:not([data-view="exercise"]) .layout { display: none; }
 .exercise-stats .tile-value { font-size: 22px; }
 .exercise-stats .card { margin: 4px 0 8px; }
 .exercise-stats .vol-h:first-child { margin-top: 0; }
+
+/* Health > this week at a glance (glance.js): five key numbers with 14-day mini graphs */
+.tiles.glance { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.glance-tile { padding: 10px 12px; min-width: 0; }
+.glance-tile .tile-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.glance-tile .tile-value { font-size: 24px; white-space: nowrap; }
+.glance-tile .tile-delta { font-size: 12px; }
+.glance-tile { display: flex; flex-direction: column; gap: 2px; }
+.glance-head { grid-column: 1 / -1; margin: 0; font-size: 12px; color: var(--muted); }
+.glance-tile .tile-value small { font-size: 13px; font-weight: 400; color: var(--muted); }
+.glance-tile .spark { display: block; width: 100%; height: 32px; margin-top: auto; padding-top: 6px; overflow: visible; }
+.spark-col { fill: var(--series-1); }
+.spark-line { fill: none; stroke: var(--series-1); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.spark-band { fill: var(--series-1); opacity: .15; }
+.spark-ref { stroke: var(--trend); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }

@@ -58,6 +58,26 @@ const INFO = {
     source: "Training impulse (TRIMP): time spent at each heart rate, weighted by intensity, summed over the day. Polar computes it only for sessions started on the Loop. For sessions you log here (boxing, strength) and did not start on the Loop, the app computes it from the Loop's minute heart rate and your max and resting heart rate in Polar, on days Polar has no load of its own (so nothing counts twice). Days the Loop did not cover in full are left out.",
     read: "A number per day; higher means more cardiovascular strain. Useful as a trend: steady weekly load builds fitness, sudden jumps raise the risk of fatigue.",
   },
+  "Active minutes (this week)": {
+    source: "Minutes at 60% of your max heart rate or more (zones 2–5) in the last 7 days, from Loop workouts and the Loop's minute heart rate during logged sessions. Sessions without heart rate add nothing. Graph: per day, last 14 days.",
+    read: "The measure behind the health guideline of 150 minutes of moderate activity a week (or 75 vigorous). The most important single number for long-term health.",
+  },
+  "Strength (this week)": {
+    source: "Logged strength workouts in the last 7 days. Graph: sessions per day, last 14 days.",
+    read: "Guideline: strength training on 2 or more days a week. Sets per muscle are in Exercise > Volume.",
+  },
+  "HRV (this week)": {
+    source: "Polar: heart rate variability (RMSSD) over the first ~4 h of last night's sleep; resting HR from the same window. Graph: last 14 nights, shaded = your normal range (60 nights before, ±0.5 SD).",
+    read: "How recovered your nervous system is. Inside the band: normal. Below it on several nights in a row: stress, illness, poor sleep or too much training — go easier. One low night alone means little.",
+  },
+  "Cardio load (this week)": {
+    source: "Cardio load (TRIMP) of the last 7 days against your average week over the last 28 days. Graph: per day, last 14 days.",
+    read: "Within about −20% to +30% of your usual week is steady. A jump of more than 30% raises the risk of fatigue and injury; build up gradually.",
+  },
+  "Steps (this week)": {
+    source: "Polar Loop, average of the last 7 full days (today is left out until it is over). Graph: per day, last 14 days; dashed line = 7,000.",
+    read: "Everyday movement. 7,000–10,000 steps a day go with clearly lower health risks; avoiding very low days matters most.",
+  },
   "Exercise / week": {
     source: "Strength workouts and sports you logged, plus tracker workouts nobody logged; resting sessions (TENS, meditation, breathing) don't count. Average per week over the last 4 weeks.",
     read: "The arrow compares with the 4 weeks before (±10% counts as steady). Health guidelines: 150–300 min of moderate or 75–150 min of vigorous activity a week.",
